@@ -602,6 +602,7 @@ label.check input{width:20px;height:20px;padding:0;flex:none;accent-color:var(--
   }
   const repo = () => store.get("repo", "") || defaultRepo();
   const token = () => store.get("token", "");
+  let dataRef = "app-daten";
   async function fetchData(path, asText = false) {
     if (dataMode !== "api") {
       const r = await fetch(`${path}?t=${Date.now()}`, { cache: "no-store" });
@@ -609,9 +610,15 @@ label.check input{width:20px;height:20px;padding:0;flex:none;accent-color:var(--
       if (dataMode === "web" || r.status !== 404) throw new Error(r.status);
     }
     if (!token() || !repo()) throw Object.assign(new Error("setup"), { setup: true });
-    const r = await fetch(`https://api.github.com/repos/${repo()}/contents/docs/${path}?ref=main&t=${Date.now()}`, {
-      headers: { Authorization: `Bearer ${token()}`, Accept: "application/vnd.github.raw+json" }, cache: "no-store",
-    });
+    // Aufbereitete Daten liegen auf dem Zweig „app-daten“ (ein Stand ohne Verlauf); Rückfall auf „main“
+    let r;
+    for (const ref of [...new Set([dataRef, "app-daten", "main"])]) {
+      r = await fetch(`https://api.github.com/repos/${repo()}/contents/docs/${path}?ref=${ref}&t=${Date.now()}`, {
+        headers: { Authorization: `Bearer ${token()}`, Accept: "application/vnd.github.raw+json" }, cache: "no-store",
+      });
+      if (r.ok) { if (path === "data/bases.json") dataRef = ref; break; }
+      if (r.status !== 404) break;
+    }
     if (r.status === 401 || r.status === 403) throw Object.assign(new Error("Schlüssel ungültig oder ohne Leserecht"), { setup: true });
     if (!r.ok) throw new Error(`GitHub ${r.status}`);
     dataMode = "api";
@@ -2010,7 +2017,7 @@ label.check input{width:20px;height:20px;padding:0;flex:none;accent-color:var(--
     if (!r || !t) { out.innerHTML = h + line(false, "Repository und Schlüssel ausfüllen."); return; }
     const H = { Authorization: `Bearer ${t}`, Accept: "application/vnd.github+json" };
     try {
-      const a = await fetch(`https://api.github.com/repos/${r}/contents/docs/data/bases.json?ref=main`, { headers: H, cache: "no-store" });
+      const a = await fetch(`https://api.github.com/repos/${r}/contents/docs/data/bases.json?ref=app-daten`, { headers: H, cache: "no-store" });
       h += a.ok ? line(true, "Daten lesen erlaubt")
         : line(false, { 401: "Schlüssel ungültig oder abgelaufen", 404: "Kein Zugriff – Repository beim Schlüssel nicht ausgewählt (oder Name falsch)", 403: "Lesen nicht erlaubt – „Contents: Read-only“ fehlt" }[a.status] || `Lesen: GitHub ${a.status}`);
       const b = await fetch(`https://api.github.com/repos/${r}/actions/workflows/tankpreise.yml/dispatches`, {
