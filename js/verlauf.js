@@ -88,6 +88,21 @@ function verlaufHtml() {
   return h + FOOT();
 }
 
+// Kurzfassung der Tagesspitzen: übliche Uhrzeit und Abstand zum Tagestief (nur volle Tage)
+function peakNote(series) {
+  const days = {};
+  for (const [t, v] of series) (days[new Date(t).toDateString()] ||= []).push([t, v]);
+  const full = Object.values(days).filter((d) => d.length >= 20);
+  if (full.length < 2) return "";
+  const hours = {}, rise = [];
+  for (const d of full) {
+    const top = d.reduce((a, b) => b[1] > a[1] ? b : a), low = Math.min(...d.map((p) => p[1]));
+    const h = new Date(top[0]).getHours(); hours[h] = (hours[h] || 0) + 1; rise.push(top[1] - low);
+  }
+  const h = +Object.keys(hours).sort((a, b) => hours[b] - hours[a])[0];
+  return `<span>${say(`Spitza meischtens geg ${h} Uhr, im Schnitt ${ct(mean(rise))} überm Tagestief`, `Spitzen meist gegen ${h} Uhr, im Schnitt ${ct(mean(rise))} über dem Tagestief`)}</span>`;
+}
+
 function renderAnalysis() {
   if (!view || view.error) return;
   const elA = $("#analysis");
@@ -125,7 +140,8 @@ function renderAnalysis() {
       <div class="card stat"><span class="eyebrow">Tiefstpreis</span><span class="v">${eur(sum.lo.v)}</span><span class="sub">${esc(labelOf(sum.lo.id))} · ${esc(fmtTime(sum.lo.t))}</span></div>
     </div>
     <div class="card chartcard"><div class="t">Durchschnittspreis</div><div class="s">Alle Tankstellen im Umkreis, stündlich</div>
-      ${lineChart([{ name: "Ø im Umkreis", pts: sum.series }])}
+      ${lineChart([{ name: "Ø im Umkreis", pts: sum.series }], { peaks: true })}
+      <div class="legend"><span><i class="kr pkk"></i>${say("Tageshöchschtwert", "Tageshöchstwert")}</span>${peakNote(sum.series)}</div>
       ${tbl(["Tag", "Ø", "Tief", "Hoch"], dailyRows(sum.series))}</div>`;
   if (sum.days > 1) {
     h += `<div class="card chartcard"><div class="t">Preis nach Uhrzeit</div><div class="s">${say("Abweichung vom Tagesschnitt der jeweiligen Tankstelle", "Abweichung vom Tagesmittel der jeweiligen Tankstelle")}</div>

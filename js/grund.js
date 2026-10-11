@@ -478,8 +478,20 @@ function lineChart(series, opts = {}) {
   }
   for (const x of [...series].reverse()) if (x.pts.length > 1) g += `<path class="ln ${x.cls || ""}" d="${path(x.pts)}"/>`;
   const [mt, mv] = opts.mark || main[main.length - 1];
-  g += `<circle class="dot" cx="${X(mt).toFixed(1)}" cy="${Y(mv).toFixed(1)}" r="4"/>`;
   const lx = X(mt), right = lx < L + 60;
+  // Tageshöchstwerte beschriften (je Kalendertag der höchste Punkt), ohne den Endwert zu überdecken
+  if (opts.peaks) {
+    const days = {};
+    for (const p of main) (days[new Date(p[0]).toDateString()] ||= []).push(p);
+    for (const d of Object.values(days)) {
+      const [t, v] = d.reduce((a, b) => b[1] > a[1] ? b : a), mid = median(d.map((p) => p[1]));
+      if (d.length < 6 || t === main[0][0] || v - mid < 0.015) continue;   // nur echte Spitzen (≥ 1,5 ct über dem Tagesmittel), nicht am angeschnittenen Rand
+      const x = X(t), y = Y(v);
+      if (t === mt || (Math.abs(x - lx) < 46 && Math.abs(y - Y(mv)) < 16)) continue;
+      g += `<circle class="pk" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.5"/><text class="pkl" x="${Math.min(W - R, Math.max(L + 12, x)).toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="middle">${fmtNum(v, 3)}</text>`;
+    }
+  }
+  g += `<circle class="dot" cx="${X(mt).toFixed(1)}" cy="${Y(mv).toFixed(1)}" r="4"/>`;
   g += `<text class="lbl" x="${(right ? lx + 7 : lx - 7).toFixed(1)}" y="${(Y(mv) - 8).toFixed(1)}" text-anchor="${right ? "start" : "end"}">${opts.markLabel || fmtNum(mv, 3)}</text>`;
   g += `<line class="xh" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>`;
   const times = [...new Set(series.flatMap((x) => x.pts.map((p) => p[0])))].sort((a, b) => a - b);

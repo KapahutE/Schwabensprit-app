@@ -238,6 +238,9 @@ body[data-tab=tankbuch] .locrow,body[data-tab=tankbuch] .sticky{display:none}
 svg.chart{width:100%;height:auto;display:block;overflow:visible}
 svg.chart text{fill:var(--muted);font-size:10.5px;font-family:inherit}
 svg.chart text.lbl{fill:var(--fg);font-weight:700;font-size:11px}
+.pk{fill:var(--hi);stroke:var(--card);stroke-width:1.5}
+svg.chart text.pkl{fill:var(--fg);font-size:9.5px;font-weight:650}
+.legend .kr.pkk{background:var(--hi);border-radius:50%}
 .gl{stroke:var(--grid);stroke-width:1}.ax{stroke:var(--axis);stroke-width:1}
 .ln{fill:none;stroke:var(--lo);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
 .ln.ref{stroke:var(--mid)}
