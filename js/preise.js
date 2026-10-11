@@ -205,7 +205,7 @@ function preiseHtml() {
     const stt = state(best), save = avgNow - best[fuel];
     h += `<section class="card hero">
       <span class="eyebrow">${say("Am billigschde", "Günstigste")} · ${FUELS[fuel]} · ${radius} km</span>
-      <div class="pricerow"><div class="price">${eur2s(best[fuel])}<span class="cur">€</span></div>
+      <div class="pricerow"><div class="price">${priceN(best[fuel])}<span class="cur">€</span></div>
         ${withPrice.length > 1 && save > 0.0005 ? `<div class="save"><span class="eyebrow">${say("Gspart", "Ersparnis")}</span><b>${eur2(save * TANK())}</b><span>bei ${fmtNum(TANK(), 0)} l ggü. Ø</span></div>` : ""}</div>
       <div class="station">${badge(best, lv(best), "lg")}
         <div style="min-width:0"><div class="where">${esc(best.brand)} · ${esc(best.place)}</div>
@@ -361,8 +361,8 @@ function whenHead(sum, P) {
     ic = "⏰";
     if (P.ok && !P.wait) {
       title = say("Etz tanka passt scho", "Jetzt tanken ist in Ordnung");
-      sub = say(`Um 12 Uhr isch's im Schnitt um ${up} ct nauf. Laut Prognose wird's in de nächschde 12 Stond aber net arg billiger als etz (${eur(P.cur)}).`,
-        `Um 12 Uhr ging es im Schnitt um ${up} ct nach oben. Laut Prognose wird es in den nächsten 12 Stunden aber nicht deutlich günstiger als jetzt (${eur(P.cur)}).`);
+      sub = say(`Um 12 Uhr isch's im Schnitt um ${up} ct nauf. Laut Prognose wird's in de nächschde 12 Stond aber net arg billiger als etz (${eurX(P.cur)}).`,
+        `Um 12 Uhr ging es im Schnitt um ${up} ct nach oben. Laut Prognose wird es in den nächsten 12 Stunden aber nicht deutlich günstiger als jetzt (${eurX(P.cur)}).`);
     } else {
       title = say("Grad erscht nauf gange", "Gerade erst erhöht");
       sub = say(`Um 12 Uhr isch's im Schnitt um ${up} ct nauf.`, `Um 12 Uhr ging es im Schnitt um ${up} ct nach oben.`)
@@ -384,7 +384,7 @@ function whenHead(sum, P) {
   } else if (P.ok) {
     ic = SPARK;
     title = say("Etz tanka passt scho", "Jetzt tanken ist in Ordnung");
-    sub = say(`In de nächschde 12 Stond wird's voraussichtlich net arg billiger als etz (${eur(P.cur)}).`, `In den nächsten 12 Stunden wird es voraussichtlich nicht deutlich günstiger als jetzt (${eur(P.cur)}).`);
+    sub = say(`In de nächschde 12 Stond wird's voraussichtlich net arg billiger als etz (${eurX(P.cur)}).`, `In den nächsten 12 Stunden wird es voraussichtlich nicht deutlich günstiger als jetzt (${eurX(P.cur)}).`);
   } else if (sum && sum.days > 1) {
     // ohne Prognose und ohne 12-Uhr-Regel: typische Tageszeit
     const hNow = now.getHours(), devNow = sum.hourAvg[hNow];
@@ -518,12 +518,12 @@ async function renderDetail() {
     h += `<div class="sec"><h2>${FUELS[fuel]}</h2><span class="sub">${span >= 6 ? say("die letschde 7 Täg", "letzte 7 Tage") : say("bis etz gsammelt", "bisher gesammelt")}</span></div>
       <div class="stats">
         <div class="card stat"><span class="eyebrow">Ø Preis hier</span><span class="v">${eur(avg)}</span>${pill(avg - regMean, `${ct(avg - regMean)} ggü. Ø`)}</div>
-        <div class="card stat"><span class="eyebrow">Tiefstpreis</span><span class="v">${eur(lo)}</span><span class="sub">${esc(fmtTime(new Date(loAt)))}</span></div>
-        <div class="card stat"><span class="eyebrow">Höchstpreis</span><span class="v">${eur(hi)}</span><span class="sub">${hi - lo < 0.0005 ? "Preis unverändert" : "Spanne " + ct(hi - lo).replace("+", "")}</span></div>
+        <div class="card stat"><span class="eyebrow">Tiefstpreis</span><span class="v">${eurX(lo)}</span><span class="sub">${esc(fmtTime(new Date(loAt)))}</span></div>
+        <div class="card stat"><span class="eyebrow">Höchstpreis</span><span class="v">${eurX(hi)}</span><span class="sub">${hi - lo < 0.0005 ? "Preis unverändert" : "Spanne " + ct(hi - lo).replace("+", "")}</span></div>
         <div class="card stat"><span class="eyebrow">Günstigste Zeit</span><span class="v">${bestH != null && Object.keys(days).length > 1 ? `${bestH}–${bestH + 1} Uhr` : "–"}</span><span class="sub">${nChg} Preisänderungen</span></div>
       </div>
       <div class="card chartcard"><div class="t">Preisverlauf</div><div class="s">${esc(s.brand)} im Vergleich zum Ø im Umkreis</div>
-        ${lineChart([{ name: s.brand, pts }, { name: "Ø Umkreis", cls: "ref", pts: regPts }, { name: "Prognose", cls: "proj", pts: fcPts, band: fcBand }])}
+        ${lineChart([{ name: s.brand, pts, exact: true }, { name: "Ø Umkreis", cls: "ref", pts: regPts }, { name: "Prognose", cls: "proj", pts: fcPts, band: fcBand }])}
         <div class="legend"><span><i class="k"></i>${esc(s.brand)}</span><span><i class="k ref"></i>Ø Umkreis</span>${fcPts.length ? `<span><i class="k proj"></i>Prognose 24 h</span>` : ""}</div>
         ${fcBest ? `<div class="facts"><div>${say("Prognose: am billigschde voraussichtlich geg", "Prognose: am günstigsten voraussichtlich gegen")} <b>${hm(new Date(fcBest[0]))} Uhr</b> (≈ ${eurA(fcBest[1])}, ±${fmtNum(fcErr(fcData, fcBest[0]) * 100, 1)} ct).</div></div>` : ""}
         ${tbl(["Tag", "Ø", "Tief", "Hoch"], dailyRows(pts))}</div>`;
@@ -539,7 +539,7 @@ async function renderDetail() {
     h += changeCard(changeStats(chg, [s.id], fuel), say("Wann dreht die Tankstell am Preis?", "Wann ändert diese Tankstelle ihre Preise?"), "Anzahl je Uhrzeit, letzte 7 Tage");
     let p = s[fuel];
     const rows = ev.slice().reverse().slice(0, 10).map((e) => {
-      const r = `<tr><td>${esc(span(e))}</td><td><span class="arw ${e.d > 0 ? "hi" : "lo"}">${e.d > 0 ? "▲" : "▼"}</span> ${ct(e.d)}</td><td>${p != null ? eur(p) : ""}</td></tr>`;
+      const r = `<tr><td>${esc(span(e))}</td><td><span class="arw ${e.d > 0 ? "hi" : "lo"}">${e.d > 0 ? "▲" : "▼"}</span> ${ct(e.d)}</td><td>${p != null ? eurX(p) : ""}</td></tr>`;
       if (p != null) p -= e.d;
       return r;
     }).join("");

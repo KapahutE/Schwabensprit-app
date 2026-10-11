@@ -137,7 +137,7 @@ function renderAnalysis() {
   let h = `<div class="sec" style="margin-top:6px"><h2>${sum.days >= 6 ? say("Die letschde 7 Täg", "Letzte 7 Tage") : say("Bis etz gsammelt", "Bisher gesammelt")}</h2><span class="sub">${FUELS[fuel]} · ${radius} km</span></div>
     <div class="stats">
       <div class="card stat"><span class="eyebrow">Ø Preis</span><span class="v">${eur(sum.mean)}</span>${sum.trend != null ? pill(sum.trend, `${ct(sum.trend)} ggü. Vorwoche`) : ""}</div>
-      <div class="card stat"><span class="eyebrow">Tiefstpreis</span><span class="v">${eur(sum.lo.v)}</span><span class="sub">${esc(labelOf(sum.lo.id))} · ${esc(fmtTime(sum.lo.t))}</span></div>
+      <div class="card stat"><span class="eyebrow">Tiefstpreis</span><span class="v">${eurX(sum.lo.v)}</span><span class="sub">${esc(labelOf(sum.lo.id))} · ${esc(fmtTime(sum.lo.t))}</span></div>
     </div>
     <div class="card chartcard"><div class="t">Durchschnittspreis</div><div class="s">Alle Tankstellen im Umkreis, stündlich</div>
       ${lineChart([{ name: "Ø im Umkreis", pts: sum.series }], { peaks: true })}
@@ -155,7 +155,7 @@ function renderAnalysis() {
     const s = byId(r.id);
     return `<button class="item" data-detail="${esc(r.id)}"><div class="badge rank">${i + 1}</div><div class="info">
       <div class="name"><span>${esc(s?.brand ?? "Tankstelle")}</span></div><div class="addr">${km(s?.dist)} · ${esc(s?.place ?? "")}, ${esc(s?.street ?? "")}</div></div>
-      <div class="p"><b>${price(r.mean)}</b><div class="d">Ø Woche</div></div>${CHEV}</button>`;
+      <div class="p"><b>${priceR(r.mean)}</b><div class="d">Ø Woche</div></div>${CHEV}</button>`;
   }).join("") + `</div>`;
   elA.innerHTML = h;
 }

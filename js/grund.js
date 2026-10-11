@@ -43,10 +43,14 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const CHEV = `<svg class="chev" width="8" height="14" viewBox="0 0 8 14"><path d="M1 1l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
 const NAV = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.7 2.3a1 1 0 0 0-1.1-.2l-18 8a1 1 0 0 0 .1 1.9l7.4 2 2 7.4a1 1 0 0 0 1.9.1l8-18a1 1 0 0 0-.3-1.2z"/></svg>`;
 
-// Euro-Beträge und Literpreise immer kaufmännisch auf zwei Nachkommastellen gerundet (2,035 → 2,04)
+// Tatsächlich abgerufene Preise (und Belegpreise) genau wie an der Säule: 2,03⁹ €.
+// Errechnete Werte (Durchschnitte, Prognosen, Ersparnisse) kaufmännisch auf zwei Stellen: 2,035 → 2,04 €.
 const eur2s = (v) => (Math.sign(v) * Math.round(Math.abs(v) * 100 + 1e-6) / 100).toFixed(2).replace(".", ",");
-const price = (v) => v == null ? "–" : eur2s(v) + "\u00a0€";   // immer mit Währung
+const priceN = (v) => { const s = v.toFixed(3).replace(".", ","); return `${s.slice(0, -1)}<sup>${s.slice(-1)}</sup>`; };
+const price = (v) => v == null ? "–" : priceN(v) + "\u00a0€";            // abgerufener Preis, genau
+const priceR = (v) => v == null ? "–" : eur2s(v) + "\u00a0€";            // errechneter Wert, gerundet
 const eur = (v) => v == null ? "–" : eur2s(v) + " €";
+const eurX = (v) => v == null ? "–" : v.toFixed(3).replace(".", ",") + " €";
 const ct = (v) => (v > 0.0005 ? "+" : v < -0.0005 ? "−" : "±") + Math.abs(v * 100).toFixed(1).replace(".", ",") + " ct";
 const km = (d) => d == null ? "" : d.toFixed(1).replace(".", ",") + " km";
 const mean = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
@@ -491,7 +495,7 @@ function lineChart(series, opts = {}) {
     }
   }
   g += `<circle class="dot" cx="${X(mt).toFixed(1)}" cy="${Y(mv).toFixed(1)}" r="4"/>`;
-  g += `<text class="lbl" x="${(right ? lx + 7 : lx - 7).toFixed(1)}" y="${(Y(mv) - 8).toFixed(1)}" text-anchor="${right ? "start" : "end"}">${opts.markLabel || eur2s(mv) + "\u00a0€"}</text>`;
+  g += `<text class="lbl" x="${(right ? lx + 7 : lx - 7).toFixed(1)}" y="${(Y(mv) - 8).toFixed(1)}" text-anchor="${right ? "start" : "end"}">${opts.markLabel || (series[0].exact ? eurX(mv).replace(" ", "\u00a0") : eur2s(mv) + "\u00a0€")}</text>`;
   g += `<line class="xh" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>`;
   const times = [...new Set(series.flatMap((x) => x.pts.map((p) => p[0])))].sort((a, b) => a - b);
   const maps = series.map((x) => new Map(x.pts.map(([t, v]) => [t, v])));
@@ -501,7 +505,7 @@ function lineChart(series, opts = {}) {
       title: fmtTime(new Date(times[i])),
       rows: series.map((x, j) => {
         const v = maps[j].get(times[i]);
-        return v == null ? null : { value: x.cls === "proj" ? `≈ ${eurA(v)}` : eur(v), label: x.name, k: x.cls === "ref" ? "var(--mid)" : "var(--lo)" };
+        return v == null ? null : { value: x.cls === "proj" ? `≈ ${eurA(v)}` : x.exact ? eurX(v) : eur(v), label: x.name, k: x.cls === "ref" ? "var(--mid)" : "var(--lo)" };
       }).filter(Boolean),
     }),
   });

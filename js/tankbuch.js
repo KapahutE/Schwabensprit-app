@@ -140,7 +140,7 @@ function renderTankbuch() {
       : cmpNote(e) ? `<span class="tbtag">${cmpNote(e)}</span>` : "";
     return `<button class="tbitem" data-tbedit="${esc(e.id)}"><div class="d">${esc(dDE(e.date).slice(0, 6))}<span>${esc(e.time || "")}</span></div>
       <div class="info"><div class="name"><span>${esc(e.station?.label || "Tankstelle")}</span></div>
-      <div class="addr">${FUELS[e.fuel] || ""}${e.premium ? " (Premium)" : ""} · ${fmtL(e.liters)} · ${eur(e.ppl)}/l</div></div>
+      <div class="addr">${FUELS[e.fuel] || ""}${e.premium ? " (Premium)" : ""} · ${fmtL(e.liters)} · ${eurX(e.ppl)}/l</div></div>
       <div class="p"><b>${eur2(e.total || 0)}</b>${tag}</div></button>`;
   }).join("");
   el.innerHTML = `
@@ -263,7 +263,7 @@ async function saveTb() {
     photo: tbPhoto || null, created: tbEdit?.created || new Date().toISOString(),
   };
   const warn = [], ord = (x) => x.date + (x.time || "");
-  if (e.ppl < 1.2 || e.ppl > 3.2) warn.push(`Preis je Liter ${eur(e.ppl)} ist ungewöhnlich`);
+  if (e.ppl < 1.2 || e.ppl > 3.2) warn.push(`Preis je Liter ${eurX(e.ppl)} ist ungewöhnlich`);
   if (e.liters > 150) warn.push(`${fmtL(e.liters)} sind sehr viel für eine Tankung`);
   if (Math.abs(e.liters * e.ppl - e.total) > Math.max(0.1, e.total * 0.02)) warn.push("Menge × Preis passt nicht zum Betrag");
   if (e.odo) {
@@ -300,10 +300,10 @@ function celebrate(e) {
   const L = fmtNum(e.liters, 0);
   $("#cgTitle").textContent = v.beat ? (e.cmp.home ? say("Billiger als älles drhoim!", "Günstiger als alles rund um die Homebase!") : say(`Billiger als älles rund um ${area}!`, `Günstiger als alles rund um ${area}!`)) : say("Bestpreis – sauber!", "Bestpreis getroffen!");
   $("#cgText").innerHTML = (v.beat
-    ? say(`Mit ${eur(e.ppl)}/l warsch <b>${fmtNum(-v.diff * 100, 1)} ct</b> billiger als dr günstigschde Preis im Umkreis vo ${esc(area)}.`,
-      `Mit ${eur(e.ppl)}/l warst du <b>${fmtNum(-v.diff * 100, 1)} ct</b> günstiger als der günstigste Preis im Umkreis von ${esc(area)}.`)
-    : say(`Um ${esc(e.time || "die Zeit")} hot's im Umkreis vo ${esc(area)} nix Billigers gä als deine ${eur(e.ppl)}/l.`,
-      `Um ${esc(e.time || "diese Zeit")} gab es im Umkreis von ${esc(area)} nichts Günstigeres als deine ${eur(e.ppl)}/l.`))
+    ? say(`Mit ${eurX(e.ppl)}/l warsch <b>${fmtNum(-v.diff * 100, 1)} ct</b> billiger als dr günstigschde Preis im Umkreis vo ${esc(area)}.`,
+      `Mit ${eurX(e.ppl)}/l warst du <b>${fmtNum(-v.diff * 100, 1)} ct</b> günstiger als der günstigste Preis im Umkreis von ${esc(area)}.`)
+    : say(`Um ${esc(e.time || "die Zeit")} hot's im Umkreis vo ${esc(area)} nix Billigers gä als deine ${eurX(e.ppl)}/l.`,
+      `Um ${esc(e.time || "diese Zeit")} gab es im Umkreis von ${esc(area)} nichts Günstigeres als deine ${eurX(e.ppl)}/l.`))
     + (v.vsAvg > 0.05 ? `<br>${say("Gegenüber em Durchschnitt gspart", "Gegenüber dem Durchschnitt gespart")}: <b>${eur2(v.vsAvg)}</b> bei ${L} l${SW() ? ` – ${brezel(v.vsAvg).replace(/^D/, "d").replace(/[.!]$/, "")}` : ""}.` : "");
   const cf = $("#cgConfetti");
   cf.innerHTML = Array.from({ length: 26 }, (_, i) => `<i style="left:${(i * 37) % 100}%;animation-delay:${(i % 9) * 0.12}s;animation-duration:${1.8 + (i % 5) * 0.35}s">${["🎉", "⛽", "🥨", "✨", "🏆"][i % 5]}</i>`).join("");
