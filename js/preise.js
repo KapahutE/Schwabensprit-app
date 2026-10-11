@@ -113,7 +113,7 @@ async function openFav(id) {
 
 // ---- Preisprognose: im GitHub-Ablauf gelernt und am Rückblick geprüft (forecast.json)
 const SPARK = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 3 8-8"/><path d="M15 7h5v5"/></svg>`;
-const eurA = (v) => v.toFixed(2).replace(".", ",") + " €";
+const eurA = (v) => eur2s(v) + " €";
 const dtLabel = (iso) => new Date(iso).toLocaleString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " Uhr";
 const fcErr = (fc, t) => { const h = Math.min(12, Math.max(1, Math.round((t - Date.now()) / 36e5))); return (fc.quality.mae[h - 1] ?? fc.quality.mae_avg) / 100; };
 // Prognose einer Tankstelle als [[t, €]], ohne Zeiten, in denen sie laut Öffnungszeiten zu hat
