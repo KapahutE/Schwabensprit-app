@@ -205,7 +205,7 @@ function preiseHtml() {
     const stt = state(best), save = avgNow - best[fuel];
     h += `<section class="card hero">
       <span class="eyebrow">${say("Am billigschde", "Günstigste")} · ${FUELS[fuel]} · ${radius} km</span>
-      <div class="pricerow"><div class="price">${price(best[fuel])}<span class="cur">€</span></div>
+      <div class="pricerow"><div class="price">${eur2s(best[fuel])}<span class="cur">€</span></div>
         ${withPrice.length > 1 && save > 0.0005 ? `<div class="save"><span class="eyebrow">${say("Gspart", "Ersparnis")}</span><b>${eur2(save * TANK())}</b><span>bei ${fmtNum(TANK(), 0)} l ggü. Ø</span></div>` : ""}</div>
       <div class="station">${badge(best, lv(best), "lg")}
         <div style="min-width:0"><div class="where">${esc(best.brand)} · ${esc(best.place)}</div>

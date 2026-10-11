@@ -119,7 +119,7 @@ function monthBars(list, year) {
   const bars = m.map((v, i) => {
     const h = v ? Math.max(2, v / max * (H - 34)) : 0, x = i * bw + bw * 0.2, y = H - 18 - h;
     return `${v ? `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(bw * 0.6).toFixed(1)}" height="${h.toFixed(1)}" rx="2" class="tbbar"><title>${"JFMAMJJASOND"[i]} ${year}: ${eur2(v)}</title></rect>
-      <text x="${(x + bw * 0.3).toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" class="tbval">${Math.round(v)}</text>` : ""}
+      <text x="${(x + bw * 0.3).toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" class="tbval">${Math.round(v)} €</text>` : ""}
       <text x="${(i * bw + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle">${"JFMAMJJASOND"[i]}</text>`;
   }).join("");
   return `<div class="card chartcard"><div class="t">Kosten je Monat</div><div class="s">${year} · in €</div><svg viewBox="0 0 ${W} ${H}" class="tbchart" role="img" aria-label="Tankkosten je Monat ${year}">${bars}</svg></div>`;

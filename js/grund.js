@@ -45,7 +45,7 @@ const NAV = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.7 2.3a1 1
 
 // Euro-Beträge und Literpreise immer kaufmännisch auf zwei Nachkommastellen gerundet (2,035 → 2,04)
 const eur2s = (v) => (Math.sign(v) * Math.round(Math.abs(v) * 100 + 1e-6) / 100).toFixed(2).replace(".", ",");
-const price = (v) => v == null ? "–" : eur2s(v);
+const price = (v) => v == null ? "–" : eur2s(v) + "\u00a0€";   // immer mit Währung
 const eur = (v) => v == null ? "–" : eur2s(v) + " €";
 const ct = (v) => (v > 0.0005 ? "+" : v < -0.0005 ? "−" : "±") + Math.abs(v * 100).toFixed(1).replace(".", ",") + " ct";
 const km = (d) => d == null ? "" : d.toFixed(1).replace(".", ",") + " km";
@@ -438,7 +438,7 @@ function lineChart(series, opts = {}) {
   series = series.filter((x) => x.pts && x.pts.length);
   const main = series[0]?.pts;
   if (!main || main.length < 2) return `<div class="sub">Noch zu wenige Daten.</div>`;
-  const W = 340, H = 168, L = 34, R = 10, T = 16, B = 20;
+  const W = 340, H = 168, L = 44, R = 10, T = 16, B = 20;
   const all = series.flatMap((x) => [...x.pts, ...(x.band || []).flatMap(([t, a, b]) => [[t, a], [t, b]])]);
   const t0 = Math.min(...all.map((p) => p[0])), t1 = Math.max(...all.map((p) => p[0]));
   let lo = Math.min(...all.map((p) => p[1])), hi = Math.max(...all.map((p) => p[1]));
@@ -450,7 +450,7 @@ function lineChart(series, opts = {}) {
   let g = "";
   for (let v = lo; v <= hi + 1e-9; v += step) {
     const y = Y(v).toFixed(1);
-    g += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/><text x="${L - 5}" y="${(+y + 3.5).toFixed(1)}" text-anchor="end">${eur2s(v)}</text>`;
+    g += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/><text x="${L - 5}" y="${(+y + 3.5).toFixed(1)}" text-anchor="end">${eur2s(v)} €</text>`;
   }
   if (t1 - t0 > 864e5 * 1.2) {
     const d0 = new Date(t0); d0.setHours(24, 0, 0, 0);
@@ -487,11 +487,11 @@ function lineChart(series, opts = {}) {
       if (d.length < 6 || t === main[0][0] || v - mid < 0.015) continue;   // nur echte Spitzen (≥ 1,5 ct über dem Tagesmittel), nicht am angeschnittenen Rand
       const x = X(t), y = Y(v);
       if (t === mt || (Math.abs(x - lx) < 46 && Math.abs(y - Y(mv)) < 16)) continue;
-      g += `<circle class="pk" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.5"/><text class="pkl" x="${Math.min(W - R, Math.max(L + 12, x)).toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="middle">${eur2s(v)}</text>`;
+      g += `<circle class="pk" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.5"/><text class="pkl" x="${Math.min(W - R, Math.max(L + 12, x)).toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="middle">${eur2s(v)} €</text>`;
     }
   }
   g += `<circle class="dot" cx="${X(mt).toFixed(1)}" cy="${Y(mv).toFixed(1)}" r="4"/>`;
-  g += `<text class="lbl" x="${(right ? lx + 7 : lx - 7).toFixed(1)}" y="${(Y(mv) - 8).toFixed(1)}" text-anchor="${right ? "start" : "end"}">${opts.markLabel || eur2s(mv)}</text>`;
+  g += `<text class="lbl" x="${(right ? lx + 7 : lx - 7).toFixed(1)}" y="${(Y(mv) - 8).toFixed(1)}" text-anchor="${right ? "start" : "end"}">${opts.markLabel || eur2s(mv) + "\u00a0€"}</text>`;
   g += `<line class="xh" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>`;
   const times = [...new Set(series.flatMap((x) => x.pts.map((p) => p[0])))].sort((a, b) => a - b);
   const maps = series.map((x) => new Map(x.pts.map(([t, v]) => [t, v])));

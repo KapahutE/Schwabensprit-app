@@ -39,7 +39,7 @@ const Witz = (() => {
       <rect x="0" y="0" width="34" height="8" rx="3" fill="var(--d-gold)"/>
       <text x="17" y="6.2" text-anchor="middle" font-size="4.6" font-weight="700" fill="var(--d-on-gold)" ${FONT}>SUPER E5</text>
       <rect x="5" y="12" width="24" height="14" rx="2" fill="var(--d-screen)"/><rect x="5" y="12" width="24" height="5" rx="2" fill="#fff" opacity=".06"/>
-      <text x="17" y="22.8" text-anchor="middle" font-size="9" font-weight="800" fill="var(--d-${tone})" ${FONT}>${price}</text>
+      <text x="17" y="22.4" text-anchor="middle" font-size="7.4" font-weight="800" fill="var(--d-${tone})" ${FONT}>${price} €</text>
       <rect x="8" y="31" width="18" height="2.4" rx="1.2" fill="var(--d-pumpline)"/><rect x="8" y="36" width="18" height="2.4" rx="1.2" fill="var(--d-pumpline)"/>
       <rect x="31" y="10" width="6" height="20" rx="2" fill="var(--d-pump2)"/><path d="M34 14 v-3 h4 l2 3z" fill="var(--d-gold2)"/></g>`;
   }
