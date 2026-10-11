@@ -1126,22 +1126,31 @@ label.check input{width:20px;height:20px;padding:0;flex:none;accent-color:var(--
     const pts = [...best.entries()].sort((a, b) => a[0] - b[0]);
     if (!pts.length) { el.innerHTML = ""; return; }
     const [bt, bo] = pts.reduce((a, b) => b[1].v < a[1].v ? b : a);
-    const gain = cur == null ? 0 : cur - bo.v, wait = cur != null && gain >= Math.max(0.015, fcErr(fc, bt));
+    const stale = noonStale(), noon12 = new Date(); noon12.setHours(12, 0, 0, 0);
+    // Mit 12-Uhr-Regel: vor 12 heißt „warten“ oft „über den Sprung hinweg bis zum Abend“ – das klar sagen
+    const beforeNoon = !!noonCtx && Date.now() < noon12, afterNoon = !!noonCtx && !beforeNoon;
+    const gain = cur == null || stale ? 0 : cur - bo.v, wait = !stale && cur != null && gain >= Math.max(0.015, fcErr(fc, bt));
     const line = [...(cur != null ? [[now, cur]] : []), ...pts.map(([t, o]) => [t, o.v])];
     const band = pts.map(([t, o]) => [t, o.v - fcErr(fc, t), o.v + fcErr(fc, t)]);
     el.innerHTML = `<section class="card">
-      <div class="tiphead"><div class="ic">${SPARK}</div><div><b>${cur == null ? say("Grad hot älles zu", "Preisprognose") : wait ? say("Warta lohnt sich!", "Warten lohnt sich voraussichtlich") : say("Etz tanka passt scho", "Jetzt tanken ist in Ordnung")}</b>
-        <div class="sub">${cur == null
+      <div class="tiphead"><div class="ic">${SPARK}</div><div><b>${stale ? say("Grad laufet d'Erhöhunga", "Erhöhungen laufen gerade") : cur == null ? say("Grad hot älles zu", "Preisprognose") : wait && beforeNoon && bt > noon12 ? say("Vor 12 oder erscht am Obend", "Vor 12 Uhr oder erst am Abend") : wait ? say("Warta lohnt sich!", "Warten lohnt sich voraussichtlich") : say("Etz tanka passt scho", "Jetzt tanken ist in Ordnung")}</b>
+        <div class="sub">${stale
+          ? say(`Die Preise oba sind vom Abruf um ${hm(new Date(view.updated))} Uhr ond wohl scho überholt. Am billigschde wird's voraussichtlich geg ${hm(new Date(bt))} Uhr: ≈ ${eurA(bo.v)} bei ${esc(bo.s.brand)}, ${esc(bo.s.place)}.`,
+            `Die Preise oben sind vom Abruf um ${hm(new Date(view.updated))} Uhr und wohl schon überholt. Am günstigsten voraussichtlich gegen ${hm(new Date(bt))} Uhr: ≈ ${eurA(bo.v)} bei ${esc(bo.s.brand)}, ${esc(bo.s.place)}.`)
+          : cur == null
           ? say(`Grad hot koi Tankstell im Umkreis offa. Am billigschde wird's voraussichtlich geg ${hm(new Date(bt))} Uhr: ≈ ${eurA(bo.v)} bei ${esc(bo.s.brand)}, ${esc(bo.s.place)}.`,
             `Gerade hat keine Tankstelle im Umkreis geöffnet. Am günstigsten voraussichtlich gegen ${hm(new Date(bt))} Uhr: ≈ ${eurA(bo.v)} bei ${esc(bo.s.brand)}, ${esc(bo.s.place)}.`)
+          : wait && beforeNoon && bt > noon12
+          ? say(`Bis 12 Uhr bleibt's bei etwa ${eur(cur)}, dann goht's nauf. Billiger wird's erscht wieder geg ${hm(new Date(bt))} Uhr: ≈ ${eurA(bo.v)} (<b>${fmtNum(gain * 100, 1)} ct</b> weniger) bei ${esc(bo.s.brand)}, ${esc(bo.s.place)}. Wer so lang warta ka, wartet – sonst vor 12 tanka.`,
+            `Bis 12 Uhr bleibt es bei etwa ${eur(cur)}, dann steigen die Preise. Günstiger wird es erst wieder gegen ${hm(new Date(bt))} Uhr: ≈ ${eurA(bo.v)} (<b>${fmtNum(gain * 100, 1)} ct</b> weniger) bei ${esc(bo.s.brand)}, ${esc(bo.s.place)}. Wer so lange warten kann, wartet – sonst vor 12 Uhr tanken.`)
           : wait
           ? say(`Geg ${hm(new Date(bt))} Uhr wird's voraussichtlich <b>${fmtNum(gain * 100, 1)} ct billiger</b>: ≈ ${eurA(bo.v)} bei ${esc(bo.s.brand)}, ${esc(bo.s.place)}. Also bloß net hudla!`,
             `Gegen ${hm(new Date(bt))} Uhr ca. <b>${fmtNum(gain * 100, 1)} ct günstiger</b>: ≈ ${eurA(bo.v)} bei ${esc(bo.s.brand)}, ${esc(bo.s.place)}.`)
-          : say(`In de nächschde 12 Stond wird's voraussichtlich net arg billiger als etz (${eur(cur)}). Also tank ruhig, bevor's wieder aufschlägt.`,
+          : say(`In de nächschde 12 Stond wird's voraussichtlich net arg billiger als etz (${eur(cur)}). ${beforeNoon ? "Also tank ruhig, bevor's um 12 aufschlägt." : afterNoon ? "Billiger wird's heut nimmer arg." : "Also tank ruhig, bevor's wieder aufschlägt."}`,
             `In den nächsten 12 Stunden wird es voraussichtlich nicht deutlich günstiger als jetzt (${eur(cur)}).`)}</div></div></div>
       ${lineChart([{ name: "Günstigster Preis (Prognose)", cls: "proj", pts: line, band }], { mark: [bt, bo.v], markLabel: `≈ ${eurA(bo.v)}` })}
       <div class="legend"><span><i class="k proj"></i>günstigster Preis im Umkreis, Prognose</span><span><i class="kr" style="background:var(--lo);opacity:.25"></i>übliche Abweichung</span></div>
-      ${wait || cur == null ? `<div class="row"><button class="btn secondary" data-detail="${esc(bo.s.id)}">Zur Tankstelle</button></div>` : ""}
+      ${wait || stale || cur == null ? `<div class="row"><button class="btn secondary" data-detail="${esc(bo.s.id)}">Zur Tankstelle</button></div>` : ""}
       <p class="small" style="margin:10px 0 0">${say(
         `Lernendes Modell aus ${fmtNum(fc.days, 0)} Däg Daten. Im Rückblick-Test im Schnitt ±${fmtNum(fc.quality.mae_avg, 1)} ct dernebe – „dr Preis bleibt, wie er isch“ ±${fmtNum(fc.quality.naive_avg, 1)} ct. Ohne Gewähr, gell.`,
         `Lernendes Modell aus ${fmtNum(fc.days, 0)} Tagen Daten. Im Rückblick-Test im Schnitt ±${fmtNum(fc.quality.mae_avg, 1)} ct daneben – die Annahme „Preis bleibt gleich“ ±${fmtNum(fc.quality.naive_avg, 1)} ct. Keine Garantie.`)}</p>
@@ -1170,7 +1179,7 @@ label.check input{width:20px;height:20px;padding:0;flex:none;accent-color:var(--
         : `<div class="card empty"><div class="bigic">⚠️</div><b>Daten konnten nicht geladen werden</b><p>${esc(view.error.message)} – zum Neuladen nach unten ziehen.</p></div>`;
       return;
     }
-    let h = `<div id="favs"></div><div id="tbentry"></div>`;
+    let h = `<div id="favs"></div><div id="tbentry"></div><div id="noonwarn"></div>`;
     h += `<div id="health">${healthHtml}</div>`;
     const exp = store.get("tokenExp", ""), left = exp ? Math.ceil((new Date(exp + "T23:59:59") - Date.now()) / 864e5) : null;
     if (token() && left != null && left <= 14)
@@ -1299,6 +1308,14 @@ label.check input{width:20px;height:20px;padding:0;flex:none;accent-color:var(--
     }
     return ups >= 10 && jumps.length / ups >= 0.8 ? { share: jumps.length / ups, avgUp: mean(jumps) } : null;
   }
+  // Zwischen 12 und 13:30 Uhr mit Daten von vor/um 12 Uhr: Die Tankstellen erhöhen gerade, die angezeigten
+  // Preise (und alles, was darauf aufbaut) können schon überholt sein
+  function noonStale() {
+    if (!noonCtx || !view?.updated || view.live) return false;
+    const now = new Date(), noon = new Date(now), u = new Date(view.updated);
+    noon.setHours(12, 0, 0, 0);
+    return now >= noon && u < noon.getTime() + 25 * 60000 && u > noon.getTime() - 3 * 36e5;
+  }
   const dur = (min) => {
     const h = Math.floor(min / 60), m = min % 60;
     return SW() ? [h ? `${h} Stond` : "", m || !h ? `${m} Minuta` : ""].filter(Boolean).join(" ") : [h ? `${h} Std.` : "", m || !h ? `${m} Min.` : ""].filter(Boolean).join(" ");
@@ -1316,6 +1333,10 @@ label.check input{width:20px;height:20px;padding:0;flex:none;accent-color:var(--
       title = say(`${soon ? "Etz aber gschwind: " : ""}no <span class="cd">${dur(left)}</span> bis zum Preissprung`, `${soon ? "Jetzt schnell: " : ""}noch <span class="cd">${dur(left)}</span> bis zur Preiserhöhung`);
       sub = say(`Um 12 Uhr ganget d'Preis nauf – im Schnitt um ${up} ct. Vorher tanka spart bei ${L} l rund ${eurUp} gegenüber direkt danach.`,
         `Um 12 Uhr steigen die Preise – im Schnitt um ${up} ct. Vorher tanken spart bei ${L} l rund ${eurUp} gegenüber direkt danach.`);
+    } else if (mins < 780) {
+      title = say("Grad goht's nauf", "Gerade wird erhöht");
+      sub = say(`Seit 12 Uhr erhöhet d'Tankstella nach ond nach – im Schnitt um ${up} ct. ${recover ? `Bis etwa ${recover} Uhr` : "Bis zum Obend"} wird's dann Stück für Stück wieder billiger.`,
+        `Seit 12 Uhr erhöhen die Tankstellen nach und nach – im Schnitt um ${up} ct. ${recover ? `Bis etwa ${recover} Uhr` : "Bis zum Abend"} wird es dann Schritt für Schritt wieder günstiger.`);
     } else if (recover == null || now.getHours() < recover) {
       title = say("Grad erscht nauf gange", "Gerade erst erhöht");
       sub = say(`Um 12 Uhr isch's im Schnitt um ${up} ct nauf. ${recover ? `Bis etwa ${recover} Uhr wird's Stück für Stück billiger` : "Bis zum Obend wird's wieder billiger"} – wenn's net pressiert: warta.`,
@@ -1325,6 +1346,9 @@ label.check input{width:20px;height:20px;padding:0;flex:none;accent-color:var(--
       sub = say(`Nauf goht's erscht wieder morga um 12 Uhr (im Schnitt +${up} ct). Bis dahin ka mr in Ruh tanka.`,
         `Erhöht wird erst wieder morgen um 12 Uhr (im Schnitt +${up} ct). Bis dahin kann man in Ruhe tanken.`);
     }
+    const w = $("#noonwarn");
+    if (w) w.innerHTML = noonStale() ? `<div class="card notice warnbox"><span class="ic">⏳</span><div><b>Erhöhung läuft gerade</b><br>
+      Die Preise sind vom Abruf um ${hm(new Date(view.updated))} Uhr – seit 12 Uhr erhöhen die Tankstellen. Angezeigte Preise können schon überholt sein, der nächste Abruf kommt in wenigen Minuten.</div></div>` : "";
     el.innerHTML = `<section class="card noon${soon ? " soon" : ""}"><div class="tiphead"><div class="ic">⏰</div><div><b>${title}</b>
       <div class="sub">${sub}</div></div></div>
       <p class="small" style="margin:10px 0 0">${NOON_LAW} Beobachtet: ${fmtNum(info.share * 100, 0)} % aller Preiserhöhungen der letzten Tage lagen zwischen 12 und 13 Uhr.</p></section>`;
