@@ -25,6 +25,7 @@ Leiste unten mit drei Bereichen:
 | `index.html` | Grundgerüst (Kopf, Leiste, Dialoge) |
 | `app.css` | Aussehen (hell/dunkel) |
 | `js/grund.js` | Einstellungen, Daten laden, Ort/Radius, Bausteine, Diagramme, Bereiche, Start |
+| `js/witz.js` | „Witz vom Dag“: Hannes & Lena (eigene Figuren), Dialog Zeile für Zeile, abschaltbar unter ⚙ |
 | `js/preise.js` | Bereich Preise, „Wann tanka?“, Karte, Detailansicht |
 | `js/verlauf.js` | Auswertung, Bereich Verlauf, Wochenreports |
 | `js/belegleser.js` | Belegfoto aufbereiten, Texterkennung (Tesseract.js in `ocr/`), Werte und Tankstelle erkennen |

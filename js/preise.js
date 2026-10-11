@@ -240,7 +240,7 @@ function preiseHtml() {
       </div>
     </section>`;
   }
-  h += `<div id="when"></div>`;
+  h += `<div id="when"></div><div id="witz"></div>`;
 
   if (view.stations.length) {
     h += `<div class="sec"><h2>${say("Tankstella", "Tankstellen")}</h2>
