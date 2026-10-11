@@ -144,13 +144,13 @@ function renderTankbuch() {
       <div class="p"><b>${eur2(e.total || 0)}</b>${tag}</div></button>`;
   }).join("");
   el.innerHTML = `
-    <h1 class="tbh">📒 Tankbuch</h1>
+    <h1 class="tbh">📒 ${TB_NAME()}</h1>
     <p class="small" style="margin:2px 0 14px">Vergleich mit dem günstigsten Preis im Umkreis von <b>${esc(hb?.name || "–")}</b> zur Tankzeit · änderbar unter ⚙</p>
     <div class="row two" style="margin:0 0 6px">
       <button class="btn" id="btnTbScan">📷 ${say("Beleg scanna", "Beleg scannen")}</button>
       <button class="btn secondary" id="btnTbManual">✍️ Ohne Beleg</button>
     </div>
-    ${due ? `<div class="card notice warnbox" style="margin-top:12px"><span class="ic">💾</span><div><b>Zeit für eine Sicherung</b><br>${esc(due)} Das Tankbuch liegt nur auf diesem Gerät.
+    ${due ? `<div class="card notice warnbox" style="margin-top:12px"><span class="ic">💾</span><div><b>Zeit für eine Sicherung</b><br>${esc(due)} Das ${TB_NAME()} liegt nur auf diesem Gerät.
       <div class="row" style="margin-top:10px"><button class="btn" id="btnTbBackup2">Jetzt sichern</button></div></div></div>` : ""}
     ${st.n ? `<div class="sec"><h2>${year}</h2><span class="sub">${st.n} ${st.n === 1 ? "Tankung" : "Tankungen"}</span></div>
     ${years.length > 1 ? `<div class="chips">${years.map((y) => `<button class="chip ${y === year ? "on" : ""}" data-tbyear="${y}">${y}</button>`).join("")}</div>` : ""}
@@ -169,7 +169,7 @@ function renderTankbuch() {
     <div class="sec"><h2>Daten</h2></div>
     <div class="row two"><button class="btn secondary" id="btnTbCsv">Als CSV exportieren</button><button class="btn secondary" id="btnTbBackup">Sicherung speichern</button></div>
     <div class="row"><button class="btn secondary block" id="btnTbRestore">Sicherung laden</button></div>
-    <p class="small" style="margin-top:10px">Das Tankbuch bleibt nur auf diesem Gerät gespeichert – Belege werden direkt auf dem iPhone ausgelesen (Tesseract.js, Open Source), nichts wird hochgeladen. Ab und zu eine Sicherung speichern, z. B. in iCloud Drive.</p>`;
+    <p class="small" style="margin-top:10px">Das ${TB_NAME()} bleibt nur auf diesem Gerät gespeichert – Belege werden direkt auf dem iPhone ausgelesen (Tesseract.js, Open Source), nichts wird hochgeladen. Ab und zu eine Sicherung speichern, z. B. in iCloud Drive.</p>`;
 }
 
 // ---- Erfassen / Bearbeiten
@@ -275,7 +275,7 @@ async function saveTb() {
   }
   if (warn.length && !confirm(`Bitte prüfen:\n• ${warn.join("\n• ")}\n\nTrotzdem speichern?`)) return;
   const dup = tbEntries.find((x) => x.id !== e.id && x.date === e.date && x.time === e.time && Math.abs((x.total || 0) - e.total) < 0.01);
-  if (dup && !confirm("Diese Tankung scheint schon im Tankbuch zu stehen. Trotzdem speichern?")) return;
+  if (dup && !confirm(`Diese Tankung scheint schon im ${TB_NAME()} zu stehen. Trotzdem speichern?`)) return;
   e.cmp = await compareEntry(e).catch(() => null);
   try { await tbDB.put(e); } catch (err) { toast("Speichern nicht möglich: " + err.message, 6000); return; }
   $("#dlgTb").close();
@@ -324,7 +324,7 @@ async function shareFile(name, type, content) {
 function backupDue() {
   if (tbEntries.length < 3) return null;
   const at = store.get("tbBackupAt", ""), since = at ? tbEntries.filter((e) => (e.created || "") > at).length : tbEntries.length;
-  if (!at) return "Du hast dein Tankbuch noch nie gesichert.";
+  if (!at) return `Du hast dein ${TB_NAME()} noch nie gesichert.`;
   const days = Math.floor((Date.now() - new Date(at)) / 864e5);
   if (days > 30 || since >= 10) return `Letzte Sicherung vor ${days} Tagen${since ? `, seitdem ${since} neue ${since === 1 ? "Tankung" : "Tankungen"}` : ""}.`;
   return null;
@@ -355,7 +355,7 @@ $("#tbImport").addEventListener("change", async (ev) => {
     for (const e of list) { const old = tbEntries.find((x) => x.id === e.id); await tbDB.put({ ...e, photo: old?.photo || null }); }
     await tbLoad(); renderTankbuch();
     toast(`${list.length} Tankungen aus der Sicherung übernommen ✓`);
-  } catch { toast("Das ist keine gültige Tankbuch-Sicherung.", 5000); }
+  } catch { toast(`Das ist keine gültige ${TB_NAME()}-Sicherung.`, 5000); }
 });
 $("#tbFile").addEventListener("change", (ev) => { const f = ev.target.files[0]; ev.target.value = ""; if (f) openTbForm(null, f); });
 $("#btnTbSave").addEventListener("click", saveTb);

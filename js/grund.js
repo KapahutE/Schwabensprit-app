@@ -11,6 +11,8 @@ const num = (k, d, lo, hi) => Math.min(hi, Math.max(lo, Number(String(store.get(
 const TANK = () => num("tank", "50", 5, 150), CONS = () => num("cons", "7", 2, 30), ROAD = 1.3;
 const fillCost = (s, f = fuel) => s[f] * (TANK() + 2 * (s.dist || 0) * ROAD * CONS() / 100);
 const say = (schw, hoch) => SW() ? schw : hoch;
+// Name des Tankbuch-Bereichs (folgt dem Schwäbisch-Schalter)
+const TB_NAME = () => say("Spritbüchle", "Tankbuch");
 const WD_LONG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
 const WD_SCHW = ["Mendig", "Dienschdig", "Mittwoch", "Donnschdig", "Freidig", "Samschdig", "Sonndig"];
 // Ersparnis in Brezeln umgerechnet – so versteht's jeder
@@ -386,6 +388,7 @@ function setTab(t) {
 // ---- Darstellung
 function render() {
   document.body.dataset.tab = tab;
+  document.querySelectorAll(".tbname").forEach((e) => { e.textContent = TB_NAME(); });
   document.querySelectorAll("#tabbar button").forEach((b) => {
     const on = b.dataset.tab === tab;
     b.classList.toggle("on", on); on ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current");
@@ -792,7 +795,7 @@ function saveSettings() {
   store.set("tokenExp", $("#inTokExp").value);
   if ($("#inHome").value && $("#inHome").value !== store.get("homeBase", homeBase()?.id || "")) {
     store.set("homeBase", $("#inHome").value);
-    tbRecompute(true).then((n) => n && toast(`Tankbuch: ${n} Vergleiche mit der neuen Homebase neu berechnet.`));
+    tbRecompute(true).then((n) => n && toast(`${TB_NAME()}: ${n} Vergleiche mit der neuen Homebase neu berechnet.`));
   } else if ($("#inHome").value) store.set("homeBase", $("#inHome").value);
   store.set("tank", $("#inTank").value || "50");
   store.set("cons", $("#inCons").value || "7");

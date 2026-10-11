@@ -16,7 +16,7 @@ Leiste unten mit drei Bereichen:
 
 - **⛽ Preise** – Favoriten, günstigste Tankstelle, „Lohnt sich am meischda“, „Wann tanka?“ (12-Uhr-Regel, beste Tageszeit und Prognose in einer Empfehlung), Tankstellen als Top 10 (alle auf Wunsch) oder Karte
 - **📈 Verlauf** – letzte 7 Tage, Preis nach Uhrzeit, Preisänderungen, Rangliste, Wochenreports
-- **📒 Tankbuch** – Belege scannen, Tankungen, Statistik, Export (nur auf dem Gerät)
+- **📒 Spritbüchle** (Hochdeutsch: Tankbuch) – Belege scannen, Tankungen, Statistik, Export (nur auf dem Gerät)
 
 ## Dateien
 
