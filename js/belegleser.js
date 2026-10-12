@@ -48,6 +48,21 @@ function parseReceipt(raw) {
     if (any.length) out.total = Math.max(...any);
   }
 
+  // Menge oder Literpreis nicht zugeordnet (Zeichen verlesen, ungewohnter Aufbau): unter allen Zahlen das Paar
+  // suchen, für das Menge × Literpreis den Betrag ergibt
+  if (out.total != null && (out.liters == null || out.ppl == null)) {
+    const nums = [];
+    lines.forEach((l, i) => { for (const m of l.matchAll(/(?<![\d,.])(\d{1,3}[,.]\d{2,3})(?![\d,.])/g)) nums.push({ v: n(m[1]), dec: m[1].length - m[1].search(/[,.]/) - 1, i }); });
+    const Ls = out.liters != null ? [{ v: out.liters, i: fuelLine }] : nums.filter((x) => x.v >= 1 && x.v <= 250 && Math.abs(x.v - out.total) > 0.001);
+    const Ps = out.ppl != null ? [{ v: out.ppl }] : nums.filter((x) => x.dec === 3 && x.v >= 0.8 && x.v <= 4);
+    let hit = null;
+    for (const a of Ls) for (const b of Ps) {
+      const d = Math.abs(a.v * b.v - out.total);
+      if (d <= 0.03 && (!hit || d < hit.d)) hit = { a, b, d };
+    }
+    if (hit) { out.liters = hit.a.v; out.ppl = hit.b.v; if (fuelLine < 0 && hit.a.i >= 0) fuelLine = hit.a.i; }
+  }
+
   // Gegenprobe Menge × Preis = Betrag. Stehen Shop-Artikel mit auf dem Beleg (Brezel, Kaffee …), ist die
   // Summe größer – dann zählt der Betrag der Kraftstoffzeile, der zu Menge × Preis passt.
   const { liters: L, ppl: P, total: T } = out;
@@ -72,7 +87,8 @@ function parseReceipt(raw) {
     : /super|benzin|\be\s?5\b|\b95\b|v-?power|ultimate|excellium|plus/.test(t) ? "e5" : null;
   const near = fuelLine >= 0 ? lines.slice(Math.max(0, fuelLine - 2), fuelLine + 2).join(" ").toLowerCase() : "";
   out.fuel = fuelOf(near) || fuelOf(low);
-  out.premium = /v-?power|ultimate|excellium|super\s*plus|\b10[02]\b|max\s*plus/.test(near || low);
+  // „100“/„102“ nur als Oktanzahl (Super 100, 102 Oktan) – nicht in Beträgen wie „100,95“
+  out.premium = /v-?power|ultimate|excellium|super\s*plus|max\s*plus|(?:super|e)\s*10[02]\b(?![,.]\d)|\b10[02]\s*(?:oktan|ron)\b/.test(near || low);
 
   // Datum (TT.MM.JJ[JJ]) und Uhrzeit (HH:MM[:SS])
   const now = new Date();
