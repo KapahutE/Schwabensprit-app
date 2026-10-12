@@ -16,16 +16,19 @@ function parseReceipt(raw) {
   // Menge und Preis je Liter, oft in einer Zeile: „42,15 l x 1,899 EUR/l“ oder „42,15 L * 1,899“
   const LIT = /(\d{1,3}[,.]\d{2,3})\s*(?:l|ltr|lt|liter)\b/;
   const LIT2 = /(?:menge|liter|abgabe)\s*:?\s*(\d{1,3}[,.]\d{2,3})/;
+  // Einheit vor der Zahl, z. B. ORLEN: „* Diesel   l 46,54 *“ (l oft als „|“ gelesen) – nur mit Sorte in der Zeile
+  const LIT3 = /(?:diesel|super|benzin|e\s?10|e\s?5|kraftstoff|v-?power|ultimate)\b.*?(?:^|\s)(?:l|\||ltr|lt)\.?\s+(\d{1,3}[,.]\d{2,3})(?![\d,.])/;
   const PPL = [
     /(\d[,.]\d{2,3})\s*(?:€|eur|euro)?\s*\/\s*(?:l|ltr|liter)\b/,
     /(?:€|eur)\s*\/\s*(?:l|ltr|liter)\b[.:]?\s*(\d[,.]\d{2,3})/,
     /(?:preis|pr\.?)\s*(?:\/|je|pro)\s*(?:l|ltr|liter)\s*:?\s*(\d[,.]\d{2,3})/,
+    /preis\s*\/\s*[l|1i!]?\s*(?:€|eur)?\s*:?\s*(\d[,.]\d{3})(?![\d,.])/,   // „Preis/ l EUR 2,169“ (l als „|“ gelesen)
     /(?:\bx|\*|à|@)\s*(\d[,.]\d{3})\b/,
   ];
   let fuelLine = -1;
   lines.forEach((l, i) => {
     const L = l.toLowerCase();
-    const m = L.match(LIT) || L.match(LIT2);
+    const m = L.match(LIT) || L.match(LIT2) || L.match(LIT3);
     if (m && out.liters == null && n(m[1]) >= 1 && n(m[1]) <= 250) { out.liters = n(m[1]); fuelLine = i; }
     const p = PPL.map((re) => L.match(re)).find(Boolean);
     if (p && out.ppl == null && n(p[1]) >= 0.8 && n(p[1]) <= 4) { out.ppl = n(p[1]); if (fuelLine < 0) fuelLine = i; }
@@ -33,7 +36,7 @@ function parseReceipt(raw) {
 
   // Betrag: zuerst Summe/Gesamt/Zu zahlen, dann Zahlart-Zeilen (nie MwSt, Rückgeld …), sonst größter Betrag
   const money = (l) => [...l.matchAll(/(?<![\d,.])(\d{1,4}[,.]\d{2})(?![\d,.]|\s*(?:l|ltr|liter)\b|\s*(?:€|eur)?\s*\/)/gi)].map((m) => n(m[1]));
-  const skip = /(mwst|ust|netto|steuer|rückgeld|rueckgeld|gegeben)/i;
+  const skip = /(mwst|ust|netto|steuer|rückgeld|rueckgeld|gegeben|max\.?\s*betrag|reservier|vorautoris)/i;   // „Max. Betrag“ = Kartenreservierung
   const pick = (re) => {
     const c = lines.filter((l) => re.test(l) && !skip.test(l)).flatMap(money).filter((v) => v >= 1 && v <= 600);
     return c.length ? Math.max(...c) : null;
