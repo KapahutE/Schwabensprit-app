@@ -71,7 +71,7 @@ const Route = (() => {
   // Letzte Route auf dem Gerät merken (nicht bei GPS-Start: kein genauer Standort im Speicher)
   function saveLast() {
     const R = S.route;
-    if (!R || R.gps) return store.set("rtLast", "");
+    if (!R || R.gps || store.get("rtKeep", "1") !== "1") return store.set("rtLast", "");
     store.setJ("rtLast", { a: R.a, b: R.b, A: R.A, B: R.B, km: R.km, sec: R.sec, src: R.src, key: R.key, at: R.at, geom: encodePolyline(R.pts),
       det: [...R.det].slice(0, 40) });
   }
@@ -116,7 +116,8 @@ const Route = (() => {
   }
   async function coords(p) {
     if (p.kind === "gps") {
-      try { const c = await getPosition(); return { lat: c.latitude, lng: c.longitude }; }
+      // auf ca. 100 m gerundet: genug für die Route, ohne den genauen Standort weiterzugeben
+      try { const c = await getPosition(); return { lat: +c.latitude.toFixed(3), lng: +c.longitude.toFixed(3) }; }
       catch (e) { throw Object.assign(e, { user: true }); }
     }
     if (p.kind === "base") {
@@ -589,5 +590,11 @@ const Route = (() => {
     paint();
     if (S.route) ensureBases();
   }
-  return { render };
+  // „Ortsdaten löschen“ in den Einstellungen
+  function reset() {
+    goSeq++;
+    Object.assign(S, { a: { kind: "gps", label: "Mein Standort" }, b: null, recent: [], saved: [], route: null, busy: false, err: null, open: null, live: [] });
+    cache.clear();
+  }
+  return { render, reset };
 })();

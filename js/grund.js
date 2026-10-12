@@ -167,7 +167,7 @@ async function loadLive(c, force) {
     throw new Error(`Tankerkönig erlaubt nur eine Abfrage pro Minute – in ${Math.ceil(tkWait() / 1000)} s nochmal ziehen`);
   }
   tkMark();
-  const r = await fetchT(`${TK}/list.php?lat=${c.lat}&lng=${c.lng}&rad=${radius}&sort=dist&type=all&apikey=${encodeURIComponent(store.get("tk", ""))}`);
+  const r = await fetchT(`${TK}/list.php?lat=${c.lat.toFixed(3)}&lng=${c.lng.toFixed(3)}&rad=${radius}&sort=dist&type=all&apikey=${encodeURIComponent(store.get("tk", ""))}`);
   const d = await r.json();
   if (!d.ok) throw new Error(d.message || "Tankerkönig-Fehler");
   const data = { updated: new Date().toISOString(), stations: d.stations.map((s) => ({
@@ -241,7 +241,8 @@ async function load(force = false, liveForce = force) {
       loc = { mode: "gps", lat: p.latitude, lng: p.longitude, label: "Mein Standort" };
     } catch (e) { toast(e.message, 5000); if (loc.lat == null) loc = { mode: "base", baseId: bases[0]?.id }; }
   }
-  store.setJ("loc", loc);
+  // Standort nur auf ca. 100 m gerundet speichern (der genaue Wert bleibt nur im Arbeitsspeicher)
+  store.setJ("loc", loc.mode === "gps" ? { ...loc, lat: +loc.lat.toFixed(3), lng: +loc.lng.toFixed(3) } : loc);
   const c = center();
   if (!c) { view = { error: new Error("Keine Bases konfiguriert") }; return render(); }
   const src = pickSource(c);
@@ -845,6 +846,7 @@ function openSettings() {
   $("#inTk").value = store.get("tk", "");
   $("#inDialect").checked = SW();
   $("#inWitz").checked = store.get("witz", "1") === "1";
+  $("#inRtKeep").checked = store.get("rtKeep", "1") === "1";
   $("#inTokExp").value = store.get("tokenExp", "");
   $("#inHome").innerHTML = bases.map((b) => `<option value="${esc(b.id)}">${esc(b.name)} · ${esc(b.place)}</option>`).join("");
   if (homeBase()) $("#inHome").value = homeBase().id;
@@ -859,6 +861,8 @@ function saveSettings() {
   store.set("tk", $("#inTk").value.trim());
   store.set("dialect", $("#inDialect").checked ? "1" : "0");
   store.set("witz", $("#inWitz").checked ? "1" : "0");
+  store.set("rtKeep", $("#inRtKeep").checked ? "1" : "0");
+  if (!$("#inRtKeep").checked) store.set("rtLast", "");
   store.set("tokenExp", $("#inTokExp").value);
   if ($("#inHome").value && $("#inHome").value !== store.get("homeBase", homeBase()?.id || "")) {
     store.set("homeBase", $("#inHome").value);
@@ -868,6 +872,17 @@ function saveSettings() {
   store.set("cons", $("#inCons").value || "7");
   dataMode = null; bases = [];
 }
+// Ortsdaten löschen: gesuchte Orte, gemerkte Strecken, letzte Route, Start/Ziel, Live-Zwischenspeicher, Preise-Ort
+$("#btnGeoClear").addEventListener("click", () => {
+  if (!confirm("Alle gespeicherten Ortsdaten auf diesem Gerät löschen?\n\nZuletzt gesuchte Orte, gemerkte Strecken, letzte Route, Start/Ziel, gesuchter Ort und Live-Zwischenspeicher.")) return;
+  for (const k of ["rtRecent", "rtSaved", "rtLast", "rtA", "rtB", "liveCache", "lastPlace"]) { try { localStorage.removeItem(k); } catch {} }
+  lastPlace = null;
+  if (loc.mode !== "base") { loc = { mode: "base", baseId: bases[0]?.id }; store.setJ("loc", loc); }
+  Route.reset();
+  $("#dlg").close();
+  toast(say("Ortsdaten gelöscht ✓", "Ortsdaten gelöscht ✓"));
+  load();
+});
 // Prüft Schlüssel und Rechte, ohne etwas auszulösen: Ein Start auf einen nicht
 // existierenden Branch antwortet mit 422, wenn das Recht vorhanden ist, sonst mit 403/404.
 $("#btnTest").addEventListener("click", async () => {
