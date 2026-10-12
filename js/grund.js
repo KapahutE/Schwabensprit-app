@@ -105,7 +105,7 @@ async function fetchData(path, asText = false) {
 }
 async function loadBases() {
   try { bases = await fetchData("data/bases.json"); if (dataMode !== "api") dataMode = "web"; }
-  catch (e) { bases = []; throw e; }
+  catch (e) { if (e.setup || !bases.length) bases = []; throw e; }
 }
 
 // ---- Ort & Quelle bestimmen
@@ -162,7 +162,12 @@ async function loadLive(c, force) {
   const key = `${c.lat.toFixed(3)},${c.lng.toFixed(3)},${radius}`;
   const cache = store.getJ("liveCache", {});
   if (!force && cache.key === key && Date.now() - cache.at < 5 * 60000) return cache.data;
-  const r = await fetch(`${TK}/list.php?lat=${c.lat}&lng=${c.lng}&rad=${radius}&sort=dist&type=all&apikey=${encodeURIComponent(store.get("tk", ""))}`);
+  if (tkWait() > 0) {   // Tankerkönig: höchstens eine list.php-Abfrage pro Minute (app-weit)
+    if (cache.key === key) return cache.data;
+    throw new Error(`Tankerkönig erlaubt nur eine Abfrage pro Minute – in ${Math.ceil(tkWait() / 1000)} s nochmal ziehen`);
+  }
+  tkMark();
+  const r = await fetchT(`${TK}/list.php?lat=${c.lat}&lng=${c.lng}&rad=${radius}&sort=dist&type=all&apikey=${encodeURIComponent(store.get("tk", ""))}`);
   const d = await r.json();
   if (!d.ok) throw new Error(d.message || "Tankerkönig-Fehler");
   const data = { updated: new Date().toISOString(), stations: d.stations.map((s) => ({
@@ -219,13 +224,14 @@ function parseDays(text) {
 }
 
 // Lädt alles für den aktuellen Ort und baut die Ansicht
-async function load(force = false) {
+// liveForce: Live-Preise trotz 5-Minuten-Zwischenspeicher neu holen (nur bei ausdrücklichem Aktualisieren)
+async function load(force = false, liveForce = force) {
   if (force) healthAt = 0;
   if (view && !view.error) $("#main").classList.add("busy");
   try {
     if (!bases.length || force) await loadBases();
   } catch (e) {
-    view = { error: e };
+    view = { error: e, bases: bases.length };
     return render();
   }
   if (loc.mode === "base" && !bases.find((b) => b.id === loc.baseId)) loc = { mode: "base", baseId: bases[0]?.id };
@@ -241,13 +247,14 @@ async function load(force = false) {
   const src = pickSource(c);
   try {
     let data, reports = [];
-    if (src.type === "live") data = await loadLive(c, force);
+    // Live-Preise nur holen, wenn Preise/Verlauf sie zeigen – sonst später beim Wechsel dorthin
+    if (src.type === "live") data = tab === "preise" || tab === "verlauf" ? await loadLive(c, liveForce) : { updated: null, stations: [], deferred: true };
     else if (src.base) ({ latest: data, reports } = await loadBaseData(src.base));
     else data = { updated: null, stations: [] };
     const stations = data.stations
       .map((s) => ({ ...s, dist: s.lat != null ? distKm(c.lat, c.lng, s.lat, s.lng) : null }))
       .filter((s) => s.dist == null || s.dist <= radius + 0.05);
-    view = { center: c, src, base: src.base, live: src.type === "live", updated: data.updated, stations, reports };
+    view = { center: c, src, base: src.base, live: src.type === "live", updated: data.updated, stations, reports, deferred: !!data.deferred };
   } catch (e) {
     view = { center: c, src, error: e };
   }
@@ -383,6 +390,7 @@ function setTab(t) {
   if (!TABS.includes(t)) return;
   if (t === tab) return window.scrollTo({ top: 0, behavior: "smooth" });   // nochmal tippen: nach oben
   tab = t; store.set("tab", t);
+  if (view?.deferred && (t === "preise" || t === "verlauf")) load();   // Live-Preise erst jetzt holen
   render(); window.scrollTo(0, 0);
   if (t === "tankbuch") tbRecompute(false);
 }
@@ -417,6 +425,7 @@ function render() {
       : `<div class="card empty"><div class="bigic">⚠️</div><b>Daten konnten nicht geladen werden</b><p>${esc(view.error.message)} – zum Neuladen nach unten ziehen.</p></div>`;
     return;
   }
+  if (view.deferred) { main.innerHTML = `<div class="skel" style="height:268px;margin-top:6px"></div><div class="skel" style="height:320px"></div>`; return; }
   main.innerHTML = tab === "verlauf" ? verlaufHtml() : preiseHtml();
   if (tab === "preise") {
     renderFavs();
@@ -681,6 +690,15 @@ $("#optGps").addEventListener("click", async () => {
   } catch (e) { $("#gpsSub").textContent = e.message; }
 });
 $("#optPlace").addEventListener("click", () => lastPlace && setLoc({ mode: "place", ...lastPlace }));
+// Abruf mit Zeitlimit (hängende Mobilverbindung)
+const fetchT = (url, ms = 15000, opts = {}) => {
+  const c = new AbortController(), t = setTimeout(() => c.abort(), ms);
+  return fetch(url, { ...opts, signal: c.signal }).finally(() => clearTimeout(t));
+};
+// Tankerkönig: höchstens eine list.php-Abfrage pro Minute – gilt für die ganze App (auch über Neustarts)
+const TK_GAP = 60000;
+const tkWait = () => Math.max(0, Number(store.get("tkLast", "0")) + TK_GAP - Date.now());
+const tkMark = () => store.set("tkLast", String(Date.now()));
 // ---- Dienst-Adressen (endpoints.json – austauschbar, ohne den App-Code zu ändern)
 const EP_DEFAULT = {
   routing: [{ type: "osrm", name: "FOSSGIS OSRM", url: "https://routing.openstreetmap.de/routed-car/route/v1/driving/" },
@@ -688,7 +706,7 @@ const EP_DEFAULT = {
   geocode: "https://nominatim.openstreetmap.org/search",
 };
 let epP = null;
-const endpoints = () => epP ||= fetch("endpoints.json", { cache: "no-cache" }).then((r) => r.ok ? r.json() : {}).catch(() => ({}))
+const endpoints = () => epP ||= fetchT("endpoints.json", 8000, { cache: "no-cache" }).then((r) => r.ok ? r.json() : {}).catch(() => ({}))
   .then((e) => ({ ...EP_DEFAULT, ...e }));
 // Ortssuche (Nominatim): nur auf Knopfdruck, höchstens eine Anfrage pro Sekunde, Treffer zwischengespeichert
 const geoCache = new Map();
@@ -699,9 +717,14 @@ async function geoSearch(q) {
   const wait = geoLast + 1100 - Date.now();
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   geoLast = Date.now();
-  const r = await fetch(`${(await endpoints()).geocode}?format=jsonv2&countrycodes=de&limit=5&accept-language=de&q=${encodeURIComponent(q)}`);
+  const r = await fetchT(`${(await endpoints()).geocode}?format=jsonv2&countrycodes=de&limit=5&accept-language=de&q=${encodeURIComponent(q)}`, 10000);
   if (!r.ok) throw new Error(`Suche ${r.status}`);
-  const res = (await r.json()).map((x) => { const a = String(x.display_name || "").split(", "); return { lat: Number(x.lat), lng: Number(x.lon), label: a[0], sub: a.slice(1, 4).join(", ") }; });
+  const res = (await r.json()).map((x) => {
+    const a = String(x.display_name || "").split(", ");
+    // Adresse: „12, Hauptstraße, Ulm …“ → „Hauptstraße 12“
+    return /^\d+\s*[a-z]?$/i.test(a[0]) && a[1] ? { lat: Number(x.lat), lng: Number(x.lon), label: `${a[1]} ${a[0]}`, sub: a.slice(2, 5).join(", ") }
+      : { lat: Number(x.lat), lng: Number(x.lon), label: a[0], sub: a.slice(1, 4).join(", ") };
+  });
   geoCache.set(k, res);
   return res;
 }
@@ -925,6 +948,6 @@ window.addEventListener("touchend", async () => {
   ptr.style.opacity = 0; ptr.firstElementChild.style.transform = "";
 });
 
-document.addEventListener("visibilitychange", () => { if (!document.hidden) load(true); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(true, false); });   // Live-Preise nur über den Zwischenspeicher
 // Erst starten, wenn alle Teile geladen sind
 document.addEventListener("DOMContentLoaded", () => load(true));

@@ -6,7 +6,7 @@
 // Alle Teile sind klassische Skripte und teilen sich den globalen Gültigkeitsbereich – Reihenfolge in index.html beachten.
 
 const Route = (() => {
-  const CORRS = [1, 2, 5], LIVE_GAP = 60000, LIVE_KEEP = 30 * 60000, TK_RAD = 25;
+  const CORRS = [1, 2, 5], LIVE_KEEP = 30 * 60000, TK_RAD = 25, BASE_RETRY = 60000;
   const S = {
     a: store.getJ("rtA", { kind: "gps", label: "Mein Standort" }),   // {kind: gps|base|place, label, sub?, lat?, lng?, baseId?}
     b: store.getJ("rtB", null),
@@ -14,14 +14,11 @@ const Route = (() => {
     sort: ["route", "price", "value"].includes(store.get("rtSort", "")) ? store.get("rtSort", "") : "route",
     recent: store.getJ("rtRecent", []),
     route: null, busy: false, err: null, open: null, all: false, fit: false,
-    live: [], liveAt: 0, liveBusy: false, picking: null,
+    live: [], liveBusy: false, picking: null, baseFail: new Map(),
   };
+  let goSeq = 0;   // nur die zuletzt gestartete Berechnung darf ihr Ergebnis zeigen
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const ll = (p) => `${(+p.lat).toFixed(6)},${(+p.lng).toFixed(6)}`;
-  const fetchT = (url, ms = 15000) => {   // mit Zeitlimit, damit „Mir rechnet …“ nicht ewig steht
-    const c = new AbortController(), t = setTimeout(() => c.abort(), ms);
-    return fetch(url, { signal: c.signal }).finally(() => clearTimeout(t));
-  };
 
   // ---- Route berechnen (1 Anfrage je Nutzeraktion, ≥ 1 s Abstand, 10 Min. zwischengespeichert)
   const cache = new Map();
@@ -31,9 +28,9 @@ const Route = (() => {
     const key = [A.lat, A.lng, B.lat, B.lng].map((v) => v.toFixed(3)).join(",");
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < 10 * 60000) return hit;
-    const wait = routeLast + 1100 - Date.now();
-    if (wait > 0) await sleep(wait);
-    routeLast = Date.now();
+    const at = Math.max(Date.now(), routeLast + 1100);   // ≥ 1 s Abstand, auch bei schnellen Folge-Tipps
+    routeLast = at;
+    if (at > Date.now()) await sleep(at - Date.now());
     let lastErr = null;
     for (const ep of (await endpoints()).routing || []) {
       try {
@@ -67,43 +64,49 @@ const Route = (() => {
     }
     if (p.kind === "base") {
       const b = bases.find((x) => x.id === p.baseId);
-      if (!b) throw Object.assign(new Error("Diese Base gibt es nicht mehr."), { user: true });
+      if (!b) throw Object.assign(new Error(bases.length ? "Diese Base gibt es nicht mehr." : say("D'Bases hen se grad net lada lassa – nomol probiera.", "Die Bases konnten gerade nicht geladen werden – bitte erneut versuchen.")), { user: true });
       return { lat: b.lat, lng: b.lng };
     }
     return { lat: +p.lat, lng: +p.lng };
   }
   async function go() {
-    if (S.busy || !S.b) return;
+    if (!S.b) return;
+    const a = S.a, b = S.b, seq = ++goSeq;   // Start/Ziel dieser Berechnung festhalten
     S.busy = true; S.err = null; paint();
     try {
-      const A = await coords(S.a), B = await coords(S.b);
+      const A = await coords(a), B = await coords(b);
+      if (seq !== goSeq) return;
       if (distKm(A.lat, A.lng, B.lat, B.lng) < 1)
         throw Object.assign(new Error(say("Start ond Ziel sen fast am gleicha Fleck.", "Start und Ziel liegen fast am selben Ort.")), { user: true });
       const r = await fetchRoute(A, B);
-      S.route = { ...r, A, B, gps: S.a.kind === "gps", index: routeIndex(r.pts), from: S.a.label, to: S.b.label };
+      if (seq !== goSeq) return;   // inzwischen neu gewählt/getauscht → dieses Ergebnis verwerfen
+      S.route = { ...r, A, B, gps: a.kind === "gps", index: routeIndex(r.pts), from: a.label, to: b.label };
       S.open = null; S.all = false; S.fit = true;
       S.busy = false; paint();
       await ensureBases();
-      // außerhalb der Bases: höchstens eine Live-Abfrage für diese Aktion (Tankerkönig: 1/Minute)
-      if (store.get("tk", "") && uncovered().km > 0.5 && Date.now() - S.liveAt >= LIVE_GAP) await loadLiveNext();
+      // außerhalb der Bases: höchstens eine Live-Abfrage für diese Aktion (Tankerkönig: 1/Minute, app-weit)
+      if (seq === goSeq && store.get("tk", "") && uncovered().km > 0.5 && !tkWait()) await loadLiveNext();
     } catch (e) {
+      if (seq !== goSeq) return;
       S.err = e.noRoute ? say("Do goht koi Weg na – Start oder Ziel liegt z'weit weg vo dr Stroß.", "Keine Route gefunden – Start oder Ziel liegt zu weit von einer Straße entfernt.")
         : e.user ? e.message
         : `${say("Dr Routendienst isch grad net z'erreicha.", "Der Routendienst ist gerade nicht erreichbar.")} (${e.name === "AbortError" ? "Zeitüberschreitung" : e.message})`;
-    } finally { S.busy = false; paint(); }
+    } finally { if (seq === goSeq) { S.busy = false; paint(); } }
   }
 
   // ---- Preise am Weg: Bases zuerst, Live-Abschnitte nur auf Knopfdruck
   async function ensureBases() {
     const R = S.route;
     if (!R) return;
-    const need = bases.filter((b) => !baseCache[b.id] && nearestOnRoute(R.index, b.lat, b.lng, b.radius_km + CORRS.at(-1) + 1));
+    const stale = (b) => !baseCache[b.id] || (b.updated && baseCache[b.id].latest?.updated !== b.updated);
+    const need = bases.filter((b) => stale(b) && Date.now() - (S.baseFail.get(b.id) || 0) > BASE_RETRY
+      && nearestOnRoute(R.index, b.lat, b.lng, b.radius_km + CORRS.at(-1) + 1));
     if (!need.length) return;
-    await Promise.all(need.map((b) => loadBaseData(b).catch(() => null)));
+    await Promise.all(need.map((b) => loadBaseData(b).then(() => S.baseFail.delete(b.id)).catch(() => S.baseFail.set(b.id, Date.now()))));
     paint();
   }
   const coveredBy = (lat, lng) =>
-    bases.some((b) => distKm(lat, lng, b.lat, b.lng) <= b.radius_km - S.corr)
+    bases.some((b) => !S.baseFail.has(b.id) && distKm(lat, lng, b.lat, b.lng) <= b.radius_km - S.corr)
     || S.live.some((e) => distKm(lat, lng, e.lat, e.lng) <= TK_RAD - S.corr - 1);
   // Strecke ohne Preisdaten (km) und wo sie beginnt
   function uncovered() {
@@ -122,12 +125,12 @@ const Route = (() => {
   async function loadLiveNext() {
     const key = store.get("tk", ""), R = S.route;
     if (!key || !R || S.liveBusy) return;
-    if (Date.now() - S.liveAt < LIVE_GAP) return toast(say("Tankerkönig erlaubt bloß oi Abfrag pro Minut – glei wieder.", "Tankerkönig erlaubt nur eine Abfrage pro Minute – gleich wieder."));
+    if (tkWait()) return toast(say("Tankerkönig erlaubt bloß oi Abfrag pro Minut – glei wieder.", "Tankerkönig erlaubt nur eine Abfrage pro Minute – gleich wieder."));
     const u = uncovered();
     if (u.from == null) return;
     // Kreis (25 km) so legen, dass er den ersten Abschnitt ohne Preise samt Korridor abdeckt
     const [lat, lng] = routePointAt(R.index, Math.min(R.index.totalKm, u.from + (TK_RAD - S.corr - 1) * 0.9));
-    S.liveBusy = true; S.liveAt = Date.now(); paint();
+    S.liveBusy = true; tkMark(); paint();
     try {
       const r = await fetchT(`${TK}/list.php?lat=${lat.toFixed(5)}&lng=${lng.toFixed(5)}&rad=${TK_RAD}&sort=dist&type=all&apikey=${encodeURIComponent(key)}`);
       const d = await r.json();
@@ -191,6 +194,9 @@ const Route = (() => {
     const el = $("#rtBody");
     if (!el) return;
     let h = formHtml();
+    if (view?.error) h += view.error.setup
+      ? `<div class="card notice warnbox"><span class="ic">🔑</span><div><b>Noch nicht eingerichtet</b><br>${say("Ohne GitHub-Schlüssel gibt's koine Preise vo de Bases.", "Ohne GitHub-Schlüssel gibt es keine Preise aus den Bases.")}<div class="row" style="margin-top:10px"><button class="btn" id="btnSetup">Einrichten</button></div></div></div>`
+      : `<div class="card notice warnbox"><span class="ic">⚠️</span><div><b>${say("Preise hen se grad net lada lassa", "Preise konnten gerade nicht geladen werden")}</b><br>${esc(view.error.message)} – zum Neuladen nach unten ziehen.</div></div>`;
     if (S.err) h += `<div class="card notice warnbox"><span class="ic">⚠️</span><div>${esc(S.err)}${S.b ? `<div class="row" style="margin-top:10px"><button class="btn secondary" data-rtgo>${say("Nomol versuche", "Erneut versuchen")}</button></div>` : ""}</div></div>`;
     const R = S.route;
     if (S.busy && !R) h += `<div class="skel" style="height:120px"></div><div class="skel" style="height:300px"></div>`;
@@ -209,17 +215,20 @@ const Route = (() => {
   function resultHtml(R) {
     const list = stationsAlongRoute(R.index, candidates(), { corridorKm: S.corr, fuel, roadFactor: ROAD, tankL: TANK(), consL100: CONS() });
     const priced = list.filter((s) => has(s));
-    const { cheapest, bestValue } = bestPicks(priced, fuel);
+    let { cheapest, bestValue } = bestPicks(priced, fuel);
+    // gleicher Preis an mehreren Tankstellen: die mit dem kleinsten Umweg zeigen
+    if (cheapest) cheapest = priced.filter((s) => Math.abs(s[fuel] - cheapest[fuel]) < 1e-9).reduce((x, y) => (y.fillCost < x.fillCost ? y : x));
     const med = median(priced.map((s) => s[fuel]));
     const lv = (s) => !has(s) || med == null ? "off" : s[fuel] <= med - 0.0095 ? "lo" : s[fuel] >= med + 0.0095 ? "hi" : "mid";
     lastList = list; lastLv = lv;
     const u = uncovered(), key = store.get("tk", "");
+    const oldest = list.reduce((o, s) => (s._upd && (!o || s._upd < o) ? s._upd : o), null);   // ältester verwendeter Datenstand
     let h = `<section class="card rtsum" aria-live="polite"><span class="eyebrow">${say("Dei Strecke", "Deine Strecke")} · ${FUELS[fuel]} · ± ${S.corr} km</span>
-      <div class="big">${km(R.km).replace(",0 km", " km")} · ≈ ${dur(Math.max(1, Math.round(R.sec / 60)))}</div>
-      <div class="sub">${esc(R.from)} → ${esc(R.to)} · ${list.length} ${list.length === 1 ? say("Tankstell", "Tankstelle") : say("Tankstella", "Tankstellen")} ${say("am Weg", "an der Strecke")}</div></section>`;
+      <div class="big">${km(R.km).replace(",0 km", " km")} <span>≈ ${dur(Math.max(1, Math.round(R.sec / 60)))}</span></div>
+      <div class="sub">${esc(R.from)} → ${esc(R.to)} · ${list.length} ${list.length === 1 ? say("Tankstell", "Tankstelle") : say("Tankstella", "Tankstellen")} ${say("am Weg", "an der Strecke")}${oldest ? ` · Preise ${say("vom", "Stand")} ${esc(ago(oldest))}` : ""}</div></section>`;
     // Abschnitte ohne Preise
     if (u.km > 0.5) {
-      const cool = Math.ceil((LIVE_GAP - (Date.now() - S.liveAt)) / 1000);
+      const cool = Math.ceil(tkWait() / 1000);
       h += `<div class="card notice"><span class="ic">ℹ️</span><div><b>${say(`Uff ${fmtNum(u.km, 0)} km hen mir koine Preise`, `Für ${fmtNum(u.km, 0)} km fehlen Preise`)}</b> – ${say("dort send koine vo deine Bases.", "dort liegt keine deiner Bases.")}<br>
         ${key ? `${say("Mit deim Tankerkönig-Schlüssel kasch abschnittsweis Live-Preise lada (oi Abfrag pro Minut).", "Mit deinem Tankerkönig-Schlüssel lassen sich Live-Preise abschnittsweise laden (eine Abfrage pro Minute).")}
           <div class="row" style="margin-top:10px"><button class="btn secondary" data-rtlive${S.liveBusy || cool > 0 ? " disabled" : ""}>${S.liveBusy ? `<span class="spin-dot"></span> ${say("Lädt …", "Lädt …")}` : cool > 0 ? `${say("Nägschder Abschnitt in", "Nächster Abschnitt in")} <span class="rtcool">${cool}</span> s` : say("Nägschda Abschnitt lada", "Nächsten Abschnitt laden")}</button></div>`
@@ -262,15 +271,18 @@ const Route = (() => {
       <button class="chip ${S.sort === "price" ? "on" : ""}" data-rtsort="price">Nach Preis</button>
       <button class="chip ${S.sort === "value" ? "on" : ""}" data-rtsort="value">Inkl. Umweg</button>
       <button class="chip ${onlyOpen ? "on" : ""}" data-rtonly>Nur geöffnete</button></div>${LV_LEGEND}`;
-    let rows = onlyOpen ? list.filter((s) => has(s)) : list.slice();
-    if (S.sort === "price") rows.sort((a, b) => (has(b) - has(a)) || (a[fuel] ?? 9) - (b[fuel] ?? 9) || a.alongKm - b.alongKm);
-    if (S.sort === "value") rows.sort((a, b) => (has(b) - has(a)) || (a.fillCost ?? 1e9) - (b.fillCost ?? 1e9) || a.alongKm - b.alongKm);
-    const n = S.all ? 80 : 10;
+    const rows = displayRows(list), n = S.all ? rows.length : 10;
     h += `<div class="list rtlist">` + rows.slice(0, n).map((s) => item(s, cheapest, lv)).join("");
-    if (rows.length > n) h += `<button class="morebtn" data-rtall>${S.all ? `… ${say("ond no", "und")} ${rows.length - n} ${say("weitere", "weitere")}` : say(`Älle ${rows.length} aazeige`, `Alle ${rows.length} anzeigen`)}</button>`;
-    else if (S.all && rows.length > 10) h += `<button class="morebtn" data-rtall>${say("Weniger aazeige", "Weniger anzeigen")}</button>`;
+    if (rows.length > 10) h += `<button class="morebtn" data-rtall>${S.all ? say("Weniger aazeige", "Weniger anzeigen") : say(`Älle ${rows.length} aazeige`, `Alle ${rows.length} anzeigen`)}</button>`;
     if (!rows.length) h += `<div class="empty">${say("Grad hot koine offa.", "Gerade hat keine Tankstelle geöffnet.")}</div>`;
     return h + `</div>`;
+  }
+  // Reihenfolge der Liste (auch für den Sprung von der Karte zur Zeile)
+  function displayRows(list) {
+    const rows = onlyOpen ? list.filter((s) => has(s)) : list.slice();
+    if (S.sort === "price") rows.sort((a, b) => (has(b) - has(a)) || (a[fuel] ?? 9) - (b[fuel] ?? 9) || a.alongKm - b.alongKm);
+    if (S.sort === "value") rows.sort((a, b) => (has(b) - has(a)) || (a.fillCost ?? 1e9) - (b.fillCost ?? 1e9) || a.alongKm - b.alongKm);
+    return rows;
   }
   function item(s, cheapest, lv) {
     const p = has(s), o = isOpen(s), sch = schedule(s), d = p && cheapest ? s[fuel] - cheapest[fuel] : null, open = S.open === s.id;
@@ -300,7 +312,7 @@ const Route = (() => {
     tickT = setTimeout(() => {
       const el = document.querySelector("#rtBody .rtcool");
       if (!el) return;
-      const left = Math.ceil((LIVE_GAP - (Date.now() - S.liveAt)) / 1000);
+      const left = Math.ceil(tkWait() / 1000);
       if (left <= 0) return paint();
       el.textContent = left; tick();
     }, 1000);
@@ -357,18 +369,17 @@ const Route = (() => {
       const isPin = pins.has(s.id);
       const html = isPin ? `<div class="pin lv-${lv(s)}${s.id === best?.id ? " best" : ""}"><i></i><span>${price(s[fuel])}</span></div>` : `<div class="dotm lv-${lv(s)}"></div>`;
       L.marker([s.lat, s.lng], { icon: L.divIcon({ className: "mk", html, iconSize: [0, 0] }), zIndexOffset: isPin ? 3000 - priced.indexOf(s) : 0, keyboard: false, title: `${s.brand}, ${s.place}` })
-        .on("click", () => { S.open = s.id; S.all = S.all || rowsIndex(s.id) >= 10; paint(); document.getElementById("rt-" + s.id)?.scrollIntoView({ block: "center", behavior: "smooth" }); })
+        .on("click", () => { S.open = s.id; S.all = S.all || displayRows(lastList).findIndex((x) => x.id === s.id) >= 10; paint(); document.getElementById("rt-" + s.id)?.scrollIntoView({ block: "center", behavior: "smooth" }); })
         .addTo(rtLayer);
     }
   }
-  const rowsIndex = (id) => lastList.findIndex((s) => s.id === id);
 
   // ---- Start/Ziel wählen (Dialog): Mein Standort, Bases, zuletzt gesucht, Suche (nur beim Absenden)
   function openPick(w) {
     S.picking = w;
     $("#rtDlgTitle").textContent = w === "a" ? say("Start wähla", "Start wählen") : say("Ziel wähla", "Ziel wählen");
     $("#rtHits").innerHTML = ""; $("#rtQ").value = "";
-    const opt = (k, ic, t, sub) => `<button class="opt" data-rtset="${k}">${ic}<div class="t"><div>${esc(t)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ""}</div></button>`;
+    const opt = (k, ic, t, sub) => `<button class="opt" data-rtset="${esc(k)}">${ic}<div class="t"><div>${esc(t)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ""}</div></button>`;
     $("#rtDlgBody").innerHTML = `<div class="grouplabel">${say("Schnellwahl", "Schnellwahl")}</div><div class="optgroup">
       ${opt("gps", ptIcon({ kind: "gps" }), "Mein Standort", "per Standortfreigabe")}
       ${bases.map((b) => opt("base:" + b.id, ptIcon({ kind: "base", baseId: b.id }), b.name, b.place)).join("")}</div>
@@ -420,7 +431,7 @@ const Route = (() => {
       [S.a, S.b] = [S.b, S.a];
       store.setJ("rtA", S.a.kind === "gps" ? { kind: "gps", label: "Mein Standort" } : S.a);
       store.setJ("rtB", S.b.kind === "gps" ? { kind: "gps", label: "Mein Standort" } : S.b);
-      return S.route ? go() : paint();
+      return S.route || S.busy ? go() : paint();   // läuft gerade eine Berechnung: mit getauschten Punkten neu
     }
     if (el.hasAttribute("data-rtgo")) return go();
     if (d.rtcorr) { S.corr = +d.rtcorr; store.set("rtCorr", d.rtcorr); return paint(); }
