@@ -15,7 +15,7 @@ auf dem Gerät hinterlegten GitHub-Zugangsschlüssel aus dem privaten Daten-Repo
 Leiste unten mit drei Bereichen:
 
 - **⛽ Preise** – Favoriten, günstigste Tankstelle, „Lohnt sich am meischda“, „Wann tanka?“ (12-Uhr-Regel, beste Tageszeit und Prognose in einer Empfehlung), Tankstellen als Top 10 (alle auf Wunsch) oder Karte
-- **🛣️ Route** – Strecke planen (Start: Standort, Base oder Ort; Ziel per Suche) und die Tankstellen am Weg sehen: Abstand zur Strecke 1/2/5 km, günstigste und „lohnt sich am meisten inkl. Umweg“, Karte, Liste nach Strecken-km, Tankstopp als Zwischenziel an Google Maps / Apple Karten übergeben
+- **🛣️ Route** – Strecke planen (Start: Standort, Base oder Ort; Ziel per Suche) und die Tankstellen am Weg sehen: Abstand zur Strecke 1/2/5 km, günstigste und „lohnt sich am meisten inkl. Umweg“, Karte, Liste nach Strecken-km, Tankstopp als Zwischenziel an Google Maps / Apple Karten übergeben; echter Umweg (eine Matrix-Anfrage), Preis und Öffnung bei Ankunft (Prognose, Abfahrtszeit wählbar), Spritkosten der Fahrt, gemerkte Strecken, letzte Route bleibt nach dem Neustart
 - **📈 Verlauf** – letzte 7 Tage, Preis nach Uhrzeit, Preisänderungen, Rangliste, Wochenreports
 - **📒 Spritbüchle** (Hochdeutsch: Tankbuch) – Belege scannen, Tankungen, Statistik, Export (nur auf dem Gerät)
 

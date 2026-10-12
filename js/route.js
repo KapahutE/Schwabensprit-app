@@ -15,10 +15,21 @@ const Route = (() => {
     recent: store.getJ("rtRecent", []),
     route: null, busy: false, err: null, open: null, all: false, fit: false,
     live: [], liveBusy: false, picking: null, baseFail: new Map(),
+    saved: store.getJ("rtSaved", []),   // gemerkte Strecken [{a, b}]
+    depart: null,                        // Abfahrt (ms) – null = jetzt
+    fc: new Map(),                       // Preisprognosen der Bases am Weg: id → forecast.json
   };
   let goSeq = 0;   // nur die zuletzt gestartete Berechnung darf ihr Ergebnis zeigen
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const ll = (p) => `${(+p.lat).toFixed(6)},${(+p.lng).toFixed(6)}`;
+  const samePt = (x, y) => !!x && !!y && x.kind === y.kind && x.label === y.label && x.baseId === y.baseId && x.lat === y.lat && x.lng === y.lng;
+  // Polyline (Genauigkeit 6) für die gespeicherte letzte Route
+  function encodePolyline(pts) {
+    let out = "", pa = 0, pb = 0;
+    const enc = (v) => { v = v < 0 ? ~(v * 2) : v * 2; let r = ""; while (v >= 32) { r += String.fromCharCode((32 | (v & 31)) + 63); v = Math.floor(v / 32); } return r + String.fromCharCode(v + 63); };
+    for (const [la, ln] of pts) { const a = Math.round(la * 1e6), b = Math.round(ln * 1e6); out += enc(a - pa) + enc(b - pb); pa = a; pb = b; }
+    return out;
+  }
 
   // ---- Route berechnen (1 Anfrage je Nutzeraktion, ≥ 1 s Abstand, 10 Min. zwischengespeichert)
   const cache = new Map();
@@ -57,6 +68,52 @@ const Route = (() => {
     }
     throw lastErr || new Error("kein Routendienst eingetragen");
   }
+  // Letzte Route auf dem Gerät merken (nicht bei GPS-Start: kein genauer Standort im Speicher)
+  function saveLast() {
+    const R = S.route;
+    if (!R || R.gps) return store.set("rtLast", "");
+    store.setJ("rtLast", { a: R.a, b: R.b, A: R.A, B: R.B, km: R.km, sec: R.sec, src: R.src, key: R.key, at: R.at, geom: encodePolyline(R.pts),
+      det: [...R.det].slice(0, 40) });
+  }
+  function restoreLast() {
+    const x = store.getJ("rtLast", null);
+    if (!x?.geom || Date.now() - x.at > 24 * 36e5 || !samePt(x.a, S.a) || !samePt(x.b, S.b)) return;
+    const pts = decodePolyline(x.geom, 6);
+    if (pts.length < 2) return;
+    S.route = { pts, km: x.km, sec: x.sec, src: x.src, key: x.key, at: x.at, A: x.A, B: x.B, gps: false, index: routeIndex(pts), from: x.a.label, to: x.b.label, a: x.a, b: x.b, det: new Map(x.det || []) };
+    S.fit = true;
+  }
+  // Echter Umweg: eine Matrix-Anfrage (OSRM table) für die interessantesten Tankstellen am Weg –
+  // Start → Tankstelle → Ziel minus Start → Ziel, in km und Minuten, dazu die Fahrzeit bis zur Tankstelle
+  async function refineDetours() {
+    const R = S.route;
+    if (!R) return;
+    const ep = ((await endpoints()).routing || []).find((e) => e.type === "osrm");
+    if (!ep) return;
+    const near = stationsAlongRoute(R.index, candidates(), { corridorKm: CORRS.at(-1), fuel: "e5" });
+    const pick = new Map();
+    for (const f of Object.keys(FUELS))
+      near.filter((x) => x[f] != null && !R.det.has(x.id)).sort((x, y) => x[f] - y[f] || x.offKm - y.offKm).slice(0, 8).forEach((x) => pick.set(x.id, x));
+    const list = [...pick.values()].slice(0, 24);
+    if (!list.length) return;
+    const at = Math.max(Date.now(), routeLast + 1100);   // gleiche Taktung wie das Routing (≥ 1 s)
+    routeLast = at;
+    if (at > Date.now()) await sleep(at - Date.now());
+    const idx = list.map((_, i) => i + 2).join(";");
+    const pts = [R.A, R.B, ...list].map((p) => `${(+p.lng).toFixed(6)},${(+p.lat).toFixed(6)}`).join(";");
+    try {
+      const r = await fetchT(`${ep.url.replace("/route/", "/table/")}${pts}?sources=0;${idx}&destinations=1;${idx}&annotations=duration,distance`);
+      const d = await r.json();
+      if (d.code !== "Ok" || S.route !== R) return;
+      const dist = d.distances, du = d.durations, base = dist[0][0], baseT = du[0][0];
+      list.forEach((x, i) => {
+        const to = dist[0][i + 1], back = dist[i + 1]?.[0], toT = du[0][i + 1], backT = du[i + 1]?.[0];
+        if ([to, back, toT, backT].some((v) => v == null)) return;
+        R.det.set(x.id, { km: Math.max(0, (to + back - base) / 1000), min: Math.max(0, (toT + backT - baseT) / 60), toSec: toT });
+      });
+      saveLast(); paint();
+    } catch { /* ohne Matrix bleibt die Schätzung */ }
+  }
   async function coords(p) {
     if (p.kind === "gps") {
       try { const c = await getPosition(); return { lat: c.latitude, lng: c.longitude }; }
@@ -80,12 +137,13 @@ const Route = (() => {
         throw Object.assign(new Error(say("Start ond Ziel sen fast am gleicha Fleck.", "Start und Ziel liegen fast am selben Ort.")), { user: true });
       const r = await fetchRoute(A, B);
       if (seq !== goSeq) return;   // inzwischen neu gewählt/getauscht → dieses Ergebnis verwerfen
-      S.route = { ...r, A, B, gps: a.kind === "gps", index: routeIndex(r.pts), from: a.label, to: b.label };
+      S.route = { ...r, A, B, gps: a.kind === "gps", index: routeIndex(r.pts), from: a.label, to: b.label, a, b, det: new Map() };
       S.open = null; S.all = false; S.fit = true;
-      S.busy = false; paint();
+      S.busy = false; saveLast(); paint();
       await ensureBases();
       // außerhalb der Bases: höchstens eine Live-Abfrage für diese Aktion (Tankerkönig: 1/Minute, app-weit)
       if (seq === goSeq && store.get("tk", "") && uncovered().km > 0.5 && !tkWait()) await loadLiveNext();
+      if (seq === goSeq) await refineDetours();
     } catch (e) {
       if (seq !== goSeq) return;
       S.err = e.noRoute ? say("Do goht koi Weg na – Start oder Ziel liegt z'weit weg vo dr Stroß.", "Keine Route gefunden – Start oder Ziel liegt zu weit von einer Straße entfernt.")
@@ -101,8 +159,15 @@ const Route = (() => {
     const stale = (b) => !baseCache[b.id] || (b.updated && baseCache[b.id].latest?.updated !== b.updated);
     const need = bases.filter((b) => stale(b) && Date.now() - (S.baseFail.get(b.id) || 0) > BASE_RETRY
       && nearestOnRoute(R.index, b.lat, b.lng, b.radius_km + CORRS.at(-1) + 1));
-    if (!need.length) return;
-    await Promise.all(need.map((b) => loadBaseData(b).then(() => S.baseFail.delete(b.id)).catch(() => S.baseFail.set(b.id, Date.now()))));
+    // Preisprognose je Base (für „Preis bei Ankunft“) – neu laden, wenn es neuere Daten gibt
+    const onRoute = bases.filter((b) => nearestOnRoute(R.index, b.lat, b.lng, b.radius_km + CORRS.at(-1) + 1));
+    const fcNeed = onRoute.filter((b) => !S.fc.has(b.id) || S.fc.get(b.id).upd !== b.updated);
+    if (!need.length && !fcNeed.length) return;
+    await Promise.all([
+      ...need.map((b) => loadBaseData(b).then(() => S.baseFail.delete(b.id)).catch(() => S.baseFail.set(b.id, Date.now()))),
+      ...fcNeed.map((b) => (baseCache[b.id]?.forecast && baseCache[b.id].latest?.updated === b.updated ? Promise.resolve(baseCache[b.id].forecast) : fetchData(`data/${b.id}/forecast.json`))
+        .then((fc) => S.fc.set(b.id, { fc, upd: b.updated })).catch(() => S.fc.set(b.id, { fc: null, upd: b.updated }))),
+    ]);
     paint();
   }
   const coveredBy = (lat, lng) =>
@@ -142,6 +207,7 @@ const Route = (() => {
       })) });
     } catch (e) { toast(`${say("Live-Preise gehet grad net", "Live-Preise gerade nicht verfügbar")}: ${e.name === "AbortError" ? "Zeitüberschreitung" : e.message}`, 5000); }
     finally { S.liveBusy = false; paint(); }
+    refineDetours();
   }
   // Alle bekannten Tankstellen in Routennähe; je Tankstelle der frischeste Stand mit Preis
   function candidates() {
@@ -160,7 +226,36 @@ const Route = (() => {
   }
   // Geöffnet? Frische Daten (< 30 Min.) haben Vorrang, sonst zählt der Öffnungsplan (wie state())
   const isOpen = (s) => { const sch = schedule(s), fresh = s._upd && Date.now() - new Date(s._upd) < 30 * 60000; return !sch || fresh ? !!s.open : sch.open; };
-  const has = (s, f = fuel) => isOpen(s) && s[f] != null;
+  const SOON = 20 * 60000;   // Ankunft innerhalb 20 Min.: es gilt der aktuelle Preis
+  const fcFor = (id) => { for (const { fc } of S.fc.values()) if (fc?.ok && fc.stations?.[id]) return fc; return null; };
+  // Preis zur Ankunftszeit aus der Prognose der Base (stündlich), sonst der aktuelle Preis
+  function priceAt(s, f, t) {
+    if (s[f] == null || t - Date.now() < SOON) return { v: s[f], fc: false };
+    const fc = fcFor(s.id), arr = fc?.stations[s.id]?.[f];
+    if (!arr) return { v: s[f], fc: false };
+    const i = Math.round((t - new Date(fc.start).getTime()) / (fc.step_min * 60000));
+    return arr[i] != null ? { v: arr[i] / 1000, fc: true } : { v: s[f], fc: false };
+  }
+  // Ankunft, Umweg (echt oder geschätzt), Preis und Öffnung bei Ankunft, Tankfüllung inkl. Umweg
+  function enrich(list, R) {
+    const dep = Math.max(Date.now(), S.depart || 0);
+    for (const s of list) {
+      const d = R.det.get(s.id);
+      if (d) { s.detourKm = d.km; s.detourMin = d.min; s.exact = true; }
+      s.toSec = d?.toSec ?? R.sec * (R.km ? s.alongKm / R.km : 0);
+      s.eta = dep + s.toSec * 1000;
+      s.p = {}; s.pfc = {};
+      for (const f of Object.keys(FUELS)) { const x = priceAt(s, f, s.eta); s.p[f] = x.v; s.pfc[f] = x.fc; }
+      const sch = schedule(s, new Date(s.eta));
+      s.o = s.eta - Date.now() < SOON ? isOpen(s) : sch ? sch.open : !!s.open;
+      s.fillCost = s.p[fuel] != null ? s.p[fuel] * (TANK() + s.detourKm * CONS() / 100) : null;
+    }
+    return list;
+  }
+  const pf = (s, f = fuel) => s.p ? s.p[f] : s[f];
+  const has = (s, f = fuel) => (s.o ?? isOpen(s)) && pf(s, f) != null;
+  const hm2 = (t) => new Date(t).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  const minTxt = (m) => m < 60 ? `${Math.max(1, Math.round(m))} Min.` : dur(Math.round(m));
 
   // ---- Übergabe an Karten-Apps mit der Tankstelle als Zwischenstopp
   function gmaps(s) {
@@ -175,7 +270,10 @@ const Route = (() => {
   }
 
   // ---- Darstellung
-  const offTxt = (s) => s.offKm < 0.15 ? say("direkt am Weg", "direkt an der Strecke") : `${km(s.offKm)} ${say("ab", "abseits")}`;
+  // Umweg: echt (Matrix) als „+4 Min. Umweg“, sonst geschätzt aus dem Abstand zur Strecke
+  const offTxt = (s) => s.exact ? (s.detourMin < 1 ? say("koi Umweg", "kein Umweg") : `+${minTxt(s.detourMin)} ${say("Umweg", "Umweg")}`)
+    : s.offKm < 0.15 ? say("direkt am Weg", "direkt an der Strecke") : `${km(s.offKm)} ${say("ab", "abseits")}`;
+  const whenTxt = (s) => `${km(s.alongKm)} · ${s.exact ? "" : "≈ "}${minTxt(s.toSec / 60)}`;   // Strecken-km und Fahrzeit bis dorthin
   const baseLabel = (b) => (b.name + b.place).length <= 20 ? `${b.name} · ${b.place}` : b.name;   // wie bei der Ortswahl
   const ptIcon = (p) => p?.kind === "gps" ? `<div class="ic gps"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M21.7 2.3a1 1 0 0 0-1.1-.2l-18 8a1 1 0 0 0 .1 1.9l7.4 2 2 7.4a1 1 0 0 0 1.9.1l8-18a1 1 0 0 0-.3-1.2z"/></svg></div>`
     : p?.kind === "base" ? `<div class="ic">${esc(p.baseId || "B")}</div>` : `<div class="ic pl">⌖</div>`;
@@ -183,11 +281,16 @@ const Route = (() => {
     <div class="t"><div class="sub">${w === "a" ? "Start" : "Ziel"}</div><div>${p ? esc(p.label) : `<span class="sub">${say("Ziel wähla …", "Ziel wählen …")}</span>`}</div></div></button>`;
 
   function formHtml() {
+    const depVal = S.depart ? new Date(S.depart - new Date(S.depart).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
     return `<section class="card rtform"><span class="eyebrow">${say("Wo fahrsch na?", "Wohin geht's?")}</span>
+      ${S.saved.length ? `<div class="chips rtsaved">${S.saved.map((x, i) => `<span class="rtsv"><button class="chip" data-rtsaved="${i}">★ ${esc(x.a.label)} → ${esc(x.b.label)}</button><button class="rtsvx" data-rtunsave="${i}" aria-label="Gemerkte Strecke entfernen">×</button></span>`).join("")}</div>` : ""}
       <div class="rtpts">${ptBtn("a", S.a)}${ptBtn("b", S.b)}
         <button class="rtswap" data-rtswap type="button" aria-label="Start und Ziel tauschen"${S.b ? "" : " disabled"}>⇅</button></div>
       <div class="chips rtcorr"><span class="lbl">${say("Vom Weg", "Abstand")}</span>
         ${CORRS.map((c) => `<button class="chip ${c === S.corr ? "on" : ""}" data-rtcorr="${c}" aria-pressed="${c === S.corr}">${c} km</button>`).join("")}</div>
+      <div class="chips rtdep"><span class="lbl">${say("Abfahrt", "Abfahrt")}</span>
+        <button class="chip ${S.depart ? "" : "on"}" data-rtdepnow aria-pressed="${!S.depart}">${say("Etz", "Jetzt")}</button>
+        <input type="datetime-local" id="rtDep" class="${S.depart ? "on" : ""}" value="${depVal}" aria-label="Abfahrt später"></div>
       <button class="btn block" data-rtgo type="button"${S.b && !S.busy ? "" : " disabled"}>${S.busy ? `<span class="spin-dot"></span> ${say("Mir rechnet …", "Route wird berechnet …")}` : say("Route berechna", "Route berechnen")}</button></section>`;
   }
   function paint() {
@@ -213,19 +316,25 @@ const Route = (() => {
   }
   let lastList = [], lastLv = () => "mid";
   function resultHtml(R) {
-    const list = stationsAlongRoute(R.index, candidates(), { corridorKm: S.corr, fuel, roadFactor: ROAD, tankL: TANK(), consL100: CONS() });
+    const list = enrich(stationsAlongRoute(R.index, candidates(), { corridorKm: S.corr, fuel, roadFactor: ROAD, tankL: TANK(), consL100: CONS() }), R);
     const priced = list.filter((s) => has(s));
-    let { cheapest, bestValue } = bestPicks(priced, fuel);
-    // gleicher Preis an mehreren Tankstellen: die mit dem kleinsten Umweg zeigen
-    if (cheapest) cheapest = priced.filter((s) => Math.abs(s[fuel] - cheapest[fuel]) < 1e-9).reduce((x, y) => (y.fillCost < x.fillCost ? y : x));
-    const med = median(priced.map((s) => s[fuel]));
-    const lv = (s) => !has(s) || med == null ? "off" : s[fuel] <= med - 0.0095 ? "lo" : s[fuel] >= med + 0.0095 ? "hi" : "mid";
+    // Günstigste (Preis bei Ankunft; bei gleichem Preis die mit dem kleineren Umweg) und beste inkl. Umweg
+    const minP = priced.length ? Math.min(...priced.map((s) => pf(s))) : null;
+    const byCost = (x, y) => (y.fillCost < x.fillCost - 1e-9 || (Math.abs(y.fillCost - x.fillCost) <= 1e-9 && y.alongKm < x.alongKm) ? y : x);
+    const cheapest = priced.length ? priced.filter((s) => pf(s) - minP < 1e-9).reduce(byCost) : null;
+    const bestValue = priced.length ? priced.reduce(byCost) : null;
+    const med = median(priced.map((s) => pf(s)));
+    const lv = (s) => !has(s) || med == null ? "off" : pf(s) <= med - 0.0095 ? "lo" : pf(s) >= med + 0.0095 ? "hi" : "mid";
     lastList = list; lastLv = lv;
     const u = uncovered(), key = store.get("tk", "");
     const oldest = list.reduce((o, s) => (s._upd && (!o || s._upd < o) ? s._upd : o), null);   // ältester verwendeter Datenstand
+    const tripCost = med != null ? R.km * CONS() / 100 * med : null;                            // Sprit für die ganze Fahrt
+    const isSaved = S.saved.some((x) => samePt(x.a, R.a) && samePt(x.b, R.b));
+    const depTxt = S.depart && S.depart > Date.now() + SOON ? ` · ${say("Abfahrt", "Abfahrt")} ${esc(new Date(S.depart).toLocaleString("de-DE", { weekday: "short", hour: "2-digit", minute: "2-digit" }))}` : "";
     let h = `<section class="card rtsum" aria-live="polite"><span class="eyebrow">${say("Dei Strecke", "Deine Strecke")} · ${FUELS[fuel]} · ± ${S.corr} km</span>
-      <div class="big">${km(R.km).replace(",0 km", " km")} <span>≈ ${dur(Math.max(1, Math.round(R.sec / 60)))}</span></div>
-      <div class="sub">${esc(R.from)} → ${esc(R.to)} · ${list.length} ${list.length === 1 ? say("Tankstell", "Tankstelle") : say("Tankstella", "Tankstellen")} ${say("am Weg", "an der Strecke")}${oldest ? ` · Preise ${say("vom", "Stand")} ${esc(ago(oldest))}` : ""}</div></section>`;
+      <div class="big">${km(R.km).replace(",0 km", " km")} <span>≈ ${dur(Math.max(1, Math.round(R.sec / 60)))}${tripCost != null ? ` · Sprit ≈ ${eur2(tripCost)}` : ""}</span></div>
+      <div class="sub">${esc(R.from)} → ${esc(R.to)}${depTxt} · ${list.length} ${list.length === 1 ? say("Tankstell", "Tankstelle") : say("Tankstella", "Tankstellen")} ${say("am Weg", "an der Strecke")}${oldest ? ` · Preise ${say("vom", "Stand")} ${esc(ago(oldest))}` : ""}</div>
+      ${R.a && R.b ? `<div class="row"><button class="btn secondary rtsavebtn" data-rtsave aria-pressed="${isSaved}">${isSaved ? "★ " + say("Gmerkt", "Gemerkt") : "☆ " + say("Strecke merka", "Strecke merken")}</button></div>` : ""}</section>`;
     // Abschnitte ohne Preise
     if (u.km > 0.5) {
       const cool = Math.ceil(tkWait() / 1000);
@@ -236,12 +345,15 @@ const Route = (() => {
       if (key && cool > 0 && !S.liveBusy) tick();
     }
     if (cheapest) {
-      const avg = mean(priced.map((s) => s[fuel])), save = avg - cheapest[fuel], sch = schedule(cheapest);
+      const avg = mean(priced.map((s) => pf(s))), save = avg - pf(cheapest), sch = schedule(cheapest, new Date(cheapest.eta));
+      const fcNote = cheapest.pfc[fuel] && Math.abs(pf(cheapest) - cheapest[fuel]) >= 0.005
+        ? `<p class="quip">🕒 ${say(`Bei Ankunft (≈ ${hm2(cheapest.eta)} Uhr) voraussichtlich ${eurX(pf(cheapest))} – grad no ${eurX(cheapest[fuel])}.`, `Bei Ankunft (≈ ${hm2(cheapest.eta)} Uhr) voraussichtlich ${eurX(pf(cheapest))} – aktuell ${eurX(cheapest[fuel])}.`)}</p>` : "";
       h += `<section class="card hero rthero"><span class="eyebrow">${say("Am billigschde uff dr Strecke", "Günstigste an der Strecke")}</span>
-        <div class="pricerow"><div class="price">${priceN(cheapest[fuel])}<span class="cur">€</span></div>
+        <div class="pricerow"><div class="price">${cheapest.pfc[fuel] ? "<small>≈</small>" : ""}${priceN(pf(cheapest))}<span class="cur">€</span></div>
           ${priced.length > 1 && save > 0.0005 ? `<div class="save"><span class="eyebrow">${say("Gspart", "Ersparnis")}</span><b>${eur2(save * TANK())}</b><span>bei ${fmtNum(TANK(), 0)} l ggü. Ø</span></div>` : ""}</div>
         <div class="station">${badge(cheapest, lv(cheapest), "lg")}<div style="min-width:0"><div class="where">${esc(cheapest.brand)} · ${esc(cheapest.place)}</div>
-          <div class="sub">${say("nach", "nach")} ${km(cheapest.alongKm)} · ${offTxt(cheapest)}${isOpen(cheapest) && sch?.short ? " · " + esc(sch.short) : ""}</div></div></div>
+          <div class="sub">${whenTxt(cheapest)} · ${offTxt(cheapest)}${cheapest.o && sch?.short ? " · " + esc(sch.short) : ""}</div></div></div>
+        ${fcNote}
         ${SW() && priced.length > 1 && save > 0.0005 ? `<p class="quip">🥨 ${brezel(save * TANK())}</p>` : ""}
         <div class="row two"><a class="btn" href="${esc(gmaps(cheapest))}" target="_blank" rel="noopener">${NAV} ${say("Tankstopp", "Tankstopp")}</a>
           <button class="btn secondary" data-rtmap="${esc(cheapest.id)}">${say("Uff dr Kart", "Auf Karte")}</button></div></section>`;
@@ -250,9 +362,9 @@ const Route = (() => {
         h += `<section class="card valuecard"><div class="tiphead"><div class="ic">🚗</div><div><b>${say("Lohnt sich am meischda", "Lohnt sich am meisten")}</b>
           <div class="sub">${say("inkl. Umweg", "inkl. Umweg")} · ${fmtNum(TANK(), 0)} l · ${fmtNum(CONS(), 1)} l/100 km</div></div></div>
           <div class="station" style="margin-top:14px">${badge(bestValue, lv(bestValue))}<div style="min-width:0;flex:1"><div class="where" style="font-size:16px">${esc(bestValue.brand)} · ${esc(bestValue.place)}</div>
-            <div class="sub">${say("nach", "nach")} ${km(bestValue.alongKm)} · ${offTxt(bestValue)}</div></div><div class="price1">${price(bestValue[fuel])}</div></div>
-          <p class="verdict">${say(`A bissle deirer, aber näher am Weg: unterm Strich <b>${eur2(gain)} billiger</b> als dr Billigschde (${km(cheapest.detourKm)} Umweg).`,
-            `Etwas teurer, aber näher an der Strecke: unterm Strich <b>${eur2(gain)} günstiger</b> als die Günstigste (${km(cheapest.detourKm)} Umweg).`)}</p>
+            <div class="sub">${whenTxt(bestValue)} · ${offTxt(bestValue)}</div></div><div class="price1">${bestValue.pfc[fuel] ? "≈ " : ""}${price(pf(bestValue))}</div></div>
+          <p class="verdict">${say(`A bissle deirer, aber näher am Weg: unterm Strich <b>${eur2(gain)} billiger</b> als dr Billigschde (${cheapest.exact ? "" : "≈ "}${km(cheapest.detourKm)} Umweg).`,
+            `Etwas teurer, aber näher an der Strecke: unterm Strich <b>${eur2(gain)} günstiger</b> als die Günstigste (${cheapest.exact ? "" : "≈ "}${km(cheapest.detourKm)} Umweg).`)}</p>
           <div class="row two"><a class="btn" href="${esc(gmaps(bestValue))}" target="_blank" rel="noopener">${NAV} Tankstopp</a>
             <button class="btn secondary" data-rtmap="${esc(bestValue.id)}">${say("Uff dr Kart", "Auf Karte")}</button></div></section>`;
       }
@@ -280,26 +392,26 @@ const Route = (() => {
   // Reihenfolge der Liste (auch für den Sprung von der Karte zur Zeile)
   function displayRows(list) {
     const rows = onlyOpen ? list.filter((s) => has(s)) : list.slice();
-    if (S.sort === "price") rows.sort((a, b) => (has(b) - has(a)) || (a[fuel] ?? 9) - (b[fuel] ?? 9) || a.alongKm - b.alongKm);
+    if (S.sort === "price") rows.sort((a, b) => (has(b) - has(a)) || (pf(a) ?? 9) - (pf(b) ?? 9) || a.alongKm - b.alongKm);
     if (S.sort === "value") rows.sort((a, b) => (has(b) - has(a)) || (a.fillCost ?? 1e9) - (b.fillCost ?? 1e9) || a.alongKm - b.alongKm);
     return rows;
   }
   function item(s, cheapest, lv) {
-    const p = has(s), o = isOpen(s), sch = schedule(s), d = p && cheapest ? s[fuel] - cheapest[fuel] : null, open = S.open === s.id;
+    const p = has(s), o = s.o, sch = schedule(s, new Date(s.eta)), d = p && cheapest ? pf(s) - pf(cheapest) : null, open = S.open === s.id;
     return `<div class="rtitem${open ? " open" : ""}" id="rt-${esc(s.id)}">
       <button class="item${p ? "" : " closed"}" data-rtst="${esc(s.id)}" aria-expanded="${open}">
         ${badge(s, lv(s))}
         <div class="info"><div class="name"><span>${esc(s.brand)}</span>${isFav(s.id) ? `<span class="favstar">★</span>` : ""}${o && sch?.short ? `<span class="tag">${esc(sch.short)}</span>` : ""}</div>
-          <div class="addr">${say("nach", "nach")} ${km(s.alongKm)} · ${offTxt(s)} · ${esc(s.place)}</div></div>
-        <div class="p">${p ? `<b>${price(s[fuel])}</b><div class="d">${d ? ct(d) : say("billigschde", "günstigste")}</div>` : `<div class="d">${o ? "kein " + FUELS[fuel] : "geschlossen"}${!o && sch?.short ? "<br>" + esc(sch.short) : ""}</div>`}</div>
+          <div class="addr">${whenTxt(s)} · ${offTxt(s)} · ${esc(s.place)}</div></div>
+        <div class="p">${p ? `<b>${s.pfc[fuel] ? "≈" : ""}${price(pf(s))}</b><div class="d">${d ? ct(d) : say("billigschde", "günstigste")}</div>` : `<div class="d">${o ? "kein " + FUELS[fuel] : "geschlossen"}${!o && sch?.short ? "<br>" + esc(sch.short) : ""}</div>`}</div>
       </button>${open ? detailHtml(s) : ""}</div>`;
   }
   function detailHtml(s) {
-    const sch = schedule(s), o = isOpen(s);
+    const sch = schedule(s, new Date(s.eta)), o = s.o, later = s.eta - Date.now() >= SOON;
     return `<div class="rtdet">
-      <div class="fuelgrid">${Object.keys(FUELS).map((f) => `<div class="ftile${f === fuel ? " on" : ""}"><div class="n">${FUELS[f]}</div><b>${has(s, f) ? price(s[f]) : "–"}</b></div>`).join("")}</div>
-      <div class="sub">${esc(s.street)}, ${esc(s.place)} · ${o ? (sch?.text ? esc(sch.text) : "geöffnet") : `geschlossen${sch?.short ? " · " + esc(sch.short) : ""}`}<br>
-        ${say("Umweg", "Umweg")} ≈ ${km(s.detourKm)}${s.fillCost != null && has(s) ? ` · ${say("Tankfüllung inkl. Umweg", "Tankfüllung inkl. Umweg")} ${eur2(s.fillCost)}` : ""}</div>
+      <div class="fuelgrid">${Object.keys(FUELS).map((f) => `<div class="ftile${f === fuel ? " on" : ""}"><div class="n">${FUELS[f]}</div><b>${has(s, f) ? (s.pfc[f] ? "≈" : "") + price(pf(s, f)) : "–"}</b>${s.pfc[f] && s[f] != null ? `<div class="r">jetzt ${eurX(s[f])}</div>` : ""}</div>`).join("")}</div>
+      <div class="sub">${esc(s.street)}, ${esc(s.place)} · ${later ? `${say("Ankunft", "Ankunft")} ≈ ${hm2(s.eta)} Uhr · ` : ""}${o ? (sch?.text ? esc(sch.text) : "geöffnet") : `${later ? say("dann zu", "dann geschlossen") : "geschlossen"}${sch?.short ? " · " + esc(sch.short) : ""}`}<br>
+        ${say("Umweg", "Umweg")} ${s.exact ? `${km(s.detourKm)} · +${minTxt(s.detourMin)}` : `≈ ${km(s.detourKm)} (${say("gschätzt", "geschätzt")})`}${s.fillCost != null && has(s) ? ` · ${say("Tankfüllung inkl. Umweg", "Tankfüllung inkl. Umweg")} ${eur2(s.fillCost)}` : ""}</div>
       <div class="row"><a class="btn" href="${esc(gmaps(s))}" target="_blank" rel="noopener">${NAV} Tankstopp (Google Maps)</a>
         <a class="btn secondary" href="${esc(apple(s))}" target="_blank" rel="noopener">Apple Karten</a>
         <button class="btn secondary" data-rtmap="${esc(s.id)}">${say("Uff dr Kart", "Auf Karte")}</button>
@@ -356,8 +468,8 @@ const Route = (() => {
     rtLayer.clearLayers();
     const b = rtMap.getBounds().pad(0.1), lv = lastLv;
     const vis = lastList.filter((s) => b.contains([s.lat, s.lng]) && (!onlyOpen || has(s)));
-    const priced = vis.filter((s) => has(s)).sort((x, y) => x[fuel] - y[fuel]);
-    const best = lastList.filter((s) => has(s)).sort((x, y) => x[fuel] - y[fuel])[0];
+    const priced = vis.filter((s) => has(s)).sort((x, y) => pf(x) - pf(y));
+    const best = lastList.filter((s) => has(s)).sort((x, y) => pf(x) - pf(y))[0];
     const pins = new Set(), placed = [];
     for (const s of priced) {
       if (pins.size >= 25) break;
@@ -367,7 +479,7 @@ const Route = (() => {
     const shown = [...priced, ...vis.filter((s) => !has(s))].slice(0, 200);
     for (const s of shown) {
       const isPin = pins.has(s.id);
-      const html = isPin ? `<div class="pin lv-${lv(s)}${s.id === best?.id ? " best" : ""}"><i></i><span>${price(s[fuel])}</span></div>` : `<div class="dotm lv-${lv(s)}"></div>`;
+      const html = isPin ? `<div class="pin lv-${lv(s)}${s.id === best?.id ? " best" : ""}"><i></i><span>${price(pf(s))}</span></div>` : `<div class="dotm lv-${lv(s)}"></div>`;
       L.marker([s.lat, s.lng], { icon: L.divIcon({ className: "mk", html, iconSize: [0, 0] }), zIndexOffset: isPin ? 3000 - priced.indexOf(s) : 0, keyboard: false, title: `${s.brand}, ${s.place}` })
         .on("click", () => { S.open = s.id; S.all = S.all || displayRows(lastList).findIndex((x) => x.id === s.id) >= 10; paint(); document.getElementById("rt-" + s.id)?.scrollIntoView({ block: "center", behavior: "smooth" }); })
         .addTo(rtLayer);
@@ -422,7 +534,7 @@ const Route = (() => {
 
   // ---- Bedienung
   document.addEventListener("click", (e) => {
-    const el = e.target.closest("[data-rtpick],[data-rtswap],[data-rtgo],[data-rtcorr],[data-rtsort],[data-rtonly],[data-rtall],[data-rtst],[data-rtmap],[data-rtlive]");
+    const el = e.target.closest("[data-rtpick],[data-rtswap],[data-rtgo],[data-rtcorr],[data-rtsort],[data-rtonly],[data-rtall],[data-rtst],[data-rtmap],[data-rtlive],[data-rtsave],[data-rtsaved],[data-rtunsave],[data-rtdepnow]");
     if (!el || !el.closest("#rtBody")) return;
     const d = el.dataset;
     if (d.rtpick) return openPick(d.rtpick);
@@ -434,6 +546,21 @@ const Route = (() => {
       return S.route || S.busy ? go() : paint();   // läuft gerade eine Berechnung: mit getauschten Punkten neu
     }
     if (el.hasAttribute("data-rtgo")) return go();
+    if (el.hasAttribute("data-rtsave")) {
+      const R = S.route, i = S.saved.findIndex((x) => samePt(x.a, R.a) && samePt(x.b, R.b));
+      if (i >= 0) S.saved.splice(i, 1); else S.saved = [{ a: R.a, b: R.b }, ...S.saved].slice(0, 6);
+      store.setJ("rtSaved", S.saved);
+      toast(i >= 0 ? say("Strecke vergessa.", "Strecke entfernt.") : say("★ Strecke gmerkt – oba mit oim Tipp aufrufbar.", "★ Strecke gemerkt – oben mit einem Tipp aufrufbar."));
+      return paint();
+    }
+    if (d.rtsaved != null) {
+      const x = S.saved[+d.rtsaved];
+      if (!x) return;
+      S.a = x.a; S.b = x.b; store.setJ("rtA", x.a); store.setJ("rtB", x.b);
+      return go();
+    }
+    if (d.rtunsave != null) { S.saved.splice(+d.rtunsave, 1); store.setJ("rtSaved", S.saved); return paint(); }
+    if (el.hasAttribute("data-rtdepnow")) { S.depart = null; return paint(); }
     if (d.rtcorr) { S.corr = +d.rtcorr; store.set("rtCorr", d.rtcorr); return paint(); }
     if (d.rtsort) { S.sort = d.rtsort; store.set("rtSort", d.rtsort); return paint(); }
     if (el.hasAttribute("data-rtonly")) { onlyOpen = !onlyOpen; store.set("onlyOpen", onlyOpen ? "1" : "0"); return paint(); }
@@ -448,6 +575,14 @@ const Route = (() => {
     }
   });
 
+  document.addEventListener("change", (e) => {
+    if (e.target.id !== "rtDep") return;
+    const t = e.target.value ? new Date(e.target.value).getTime() : NaN;
+    S.depart = Number.isFinite(t) && t > Date.now() + 60000 ? t : null;
+    paint();
+  });
+
+  restoreLast();
   function render() {
     const main = $("#main");
     if (!$("#rtBody")) main.innerHTML = `<div id="rtBody"></div>`;
