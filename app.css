@@ -201,13 +201,13 @@ select{width:100%;font:inherit;font-size:16px;padding:11px 12px;border-radius:11
 .tabbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:3px 0 2px;font-size:11px;font-weight:600;color:var(--muted)}
 .tabbar svg{width:25px;height:25px}
 .tabbar button.on{color:var(--acc-ink)}
-body[data-tab=tankbuch] .locrow,body[data-tab=tankbuch] .sticky{display:none}
+body[data-tab=tankbuch] .locrow,body[data-tab=tankbuch] .sticky,body[data-tab=route] .locrow{display:none}
 
 /* Kartenansicht */
 .mapcard{padding:0;overflow:hidden;height:min(64vh,540px);position:relative}
 #map{width:100%;height:100%}
 .maperr{position:absolute;left:10px;right:10px;top:10px;z-index:500;background:var(--card);color:var(--muted);font-size:13px;padding:8px 12px;border-radius:12px;box-shadow:var(--shadow)}
-@media (prefers-color-scheme:dark){#map.osm .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9)}}
+@media (prefers-color-scheme:dark){#map.osm .leaflet-tile-pane,#rtmap.osm .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9)}}
 .leaflet-container{background:var(--card2);font:inherit}
 .leaflet-control-attribution{background:var(--bg-a)!important;color:var(--muted)!important;font-size:10px!important}
 .leaflet-control-attribution a{color:var(--muted)!important}
@@ -377,3 +377,26 @@ label.check input{width:20px;height:20px;padding:0;flex:none;accent-color:var(--
 .wzdlg li.on{opacity:1}.wzdlg li b{flex:none;width:62px;color:var(--muted);font-weight:650}
 .wzdlg li.last span{font-weight:700}
 @media (prefers-reduced-motion:reduce){.wzbub,.wzdlg li{transition:none}}
+
+/* Route */
+#dlgRt .inner{max-height:calc(100vh - 80px);overflow-y:auto}
+.rtpts{position:relative;margin:10px 0 2px}
+.rtpts .opt{background:var(--card2);min-height:56px;padding-right:60px}
+.rtswap{position:absolute;right:10px;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:22px;background:var(--card);color:var(--acc-ink);font-size:20px;font-weight:700;box-shadow:var(--shadow)}
+.rtswap:disabled{opacity:.35}
+.rtcorr{align-items:center;margin:12px 0;flex-wrap:nowrap}
+.rtcorr .lbl{font-size:13px;color:var(--muted);margin-right:2px}
+.rtcorr .chip,.rtform .chip{min-height:36px}
+.btn:disabled{opacity:.45}
+.rtsum .big{display:block;font-size:22px;font-weight:800;letter-spacing:-.02em;margin:4px 0 2px;font-variant-numeric:tabular-nums}
+.rthero .pricerow{margin:8px 0 12px}.rthero .price{font-size:52px}
+.rtmapcard{height:min(46vh,380px)}
+#rtmap{width:100%;height:100%}
+.rtgoal{position:absolute;left:0;top:0;transform:translate(-20%,-95%);font-size:24px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))}
+.rtitem{border-bottom:1px solid var(--line)}.rtitem:last-of-type{border-bottom:0}
+.rtitem .item{border-bottom:0}
+.rtitem.open{background:var(--card2)}
+.rtdet{padding:0 14px 14px}
+.rtdet .fuelgrid{margin:2px 0 10px}.rtdet .ftile{padding:8px 10px}.rtdet .ftile b{font-size:18px}
+.rtdet .row .btn{padding:10px 12px;font-size:14px}
+.rtfoot a{color:var(--muted)}

@@ -374,8 +374,8 @@ function changeCard(c, title, sub) {
     ${tbl(["Uhrzeit", "▲ Erhöhungen", "▼ Senkungen"], rows)}</div>`;
 }
 
-// ---- Bereiche (Leiste unten): Preise, Verlauf, Tankbuch
-const TABS = ["preise", "verlauf", "tankbuch"];
+// ---- Bereiche (Leiste unten): Preise, Route, Verlauf, Tankbuch
+const TABS = ["preise", "route", "verlauf", "tankbuch"];
 let tab = TABS.includes(store.get("tab", "")) ? store.get("tab", "") : "preise";
 let showAll = false;          // Tankstellenliste: Top 10 oder alle
 const LIST_TOP = 10, LIST_MAX = 60;
@@ -408,6 +408,8 @@ function render() {
   main.classList.remove("busy");
   // Das Tankbuch liegt auf dem Gerät und braucht keine Preisdaten
   if (tab === "tankbuch") { main.innerHTML = `<div id="tbBody"></div>`; return renderTankbuch(); }
+  // Die Route braucht nur die Bases (Preise am Weg lädt sie selbst)
+  if (tab === "route") return Route.render();
   if (!view) return;
   if (view.error) {
     main.innerHTML = view.error.setup
@@ -679,26 +681,51 @@ $("#optGps").addEventListener("click", async () => {
   } catch (e) { $("#gpsSub").textContent = e.message; }
 });
 $("#optPlace").addEventListener("click", () => lastPlace && setLoc({ mode: "place", ...lastPlace }));
+// ---- Dienst-Adressen (endpoints.json – austauschbar, ohne den App-Code zu ändern)
+const EP_DEFAULT = {
+  routing: [{ type: "osrm", name: "FOSSGIS OSRM", url: "https://routing.openstreetmap.de/routed-car/route/v1/driving/" },
+    { type: "valhalla", name: "FOSSGIS Valhalla", url: "https://valhalla1.openstreetmap.de/route" }],
+  geocode: "https://nominatim.openstreetmap.org/search",
+};
+let epP = null;
+const endpoints = () => epP ||= fetch("endpoints.json", { cache: "no-cache" }).then((r) => r.ok ? r.json() : {}).catch(() => ({}))
+  .then((e) => ({ ...EP_DEFAULT, ...e }));
+// Ortssuche (Nominatim): nur auf Knopfdruck, höchstens eine Anfrage pro Sekunde, Treffer zwischengespeichert
+const geoCache = new Map();
+let geoLast = 0;
+async function geoSearch(q) {
+  const k = q.trim().toLowerCase();
+  if (geoCache.has(k)) return geoCache.get(k);
+  const wait = geoLast + 1100 - Date.now();
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  geoLast = Date.now();
+  const r = await fetch(`${(await endpoints()).geocode}?format=jsonv2&countrycodes=de&limit=5&accept-language=de&q=${encodeURIComponent(q)}`);
+  if (!r.ok) throw new Error(`Suche ${r.status}`);
+  const res = (await r.json()).map((x) => { const a = String(x.display_name || "").split(", "); return { lat: Number(x.lat), lng: Number(x.lon), label: a[0], sub: a.slice(1, 4).join(", ") }; });
+  geoCache.set(k, res);
+  return res;
+}
 $("#searchForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const q = $("#inSearch").value.trim(); if (!q) return;
+  const q = $("#inSearch").value.trim(), btn = $("#searchForm button");
+  if (!q || btn.disabled) return;
+  btn.disabled = true;
   $("#searchResults").innerHTML = `<div class="sub" style="padding:8px 4px">Suche …</div>`;
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=de&limit=5&accept-language=de&q=${encodeURIComponent(q)}`);
-    const res = await r.json();
-    $("#searchResults").innerHTML = res.length ? res.map((x, i) => {
-      const a = x.display_name.split(", ");
-      return `<button class="opt" data-hit="${i}"><div class="ic pl">⌖</div><div class="t"><div>${esc(a[0])}</div><div class="sub">${esc(a.slice(1, 4).join(", "))}</div></div></button>`;
-    }).join("") : `<div class="sub" style="padding:8px 4px">Nichts gefunden.</div>`;
+    const res = await geoSearch(q);
+    $("#searchResults").innerHTML = res.length ? res.map((x, i) =>
+      `<button class="opt" data-hit="${i}"><div class="ic pl">⌖</div><div class="t"><div>${esc(x.label)}</div><div class="sub">${esc(x.sub)}</div></div></button>`).join("")
+      : `<div class="sub" style="padding:8px 4px">Nichts gefunden.</div>`;
     $("#searchResults").onclick = (ev) => {
       const b = ev.target.closest("[data-hit]"); if (!b) return;
       const x = res[b.dataset.hit];
-      lastPlace = { lat: Number(x.lat), lng: Number(x.lon), label: x.display_name.split(", ")[0] };
+      lastPlace = { lat: x.lat, lng: x.lng, label: x.label };
       store.setJ("lastPlace", lastPlace);
       $("#searchResults").innerHTML = ""; $("#inSearch").value = "";
       setLoc({ mode: "place", ...lastPlace });
     };
   } catch { $("#searchResults").innerHTML = `<div class="sub" style="padding:8px 4px">Suche gerade nicht möglich.</div>`; }
+  finally { btn.disabled = false; }
 });
 $("#inRadius").addEventListener("input", (e) => {
   radius = Number(e.target.value); store.set("radius", String(radius));
@@ -881,7 +908,7 @@ $("#detail").addEventListener("touchend", (e) => {
 
 // Ziehen nach unten zum Aktualisieren
 const ptr = $("#ptr"); let py = null, pull = 0, busy = false;
-window.addEventListener("touchstart", (e) => { py = !detailId && window.scrollY <= 0 && !busy && !document.querySelector("dialog[open]") && !e.target.closest("#map") ? e.touches[0].clientY : null; pull = 0; }, { passive: true });
+window.addEventListener("touchstart", (e) => { py = !detailId && window.scrollY <= 0 && !busy && !document.querySelector("dialog[open]") && !e.target.closest(".leaflet-container") ? e.touches[0].clientY : null; pull = 0; }, { passive: true });
 window.addEventListener("touchmove", (e) => {
   if (py == null) return;
   pull = Math.max(0, e.touches[0].clientY - py);
