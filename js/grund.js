@@ -705,26 +705,30 @@ const EP_DEFAULT = {
   routing: [{ type: "osrm", name: "FOSSGIS OSRM", url: "https://routing.openstreetmap.de/routed-car/route/v1/driving/" },
     { type: "valhalla", name: "FOSSGIS Valhalla", url: "https://valhalla1.openstreetmap.de/route" }],
   geocode: "https://nominatim.openstreetmap.org/search",
+  atPrices: "https://api.e-control.at/sprit/1.0/search/gas-stations/by-address",   // Österreich: E-Control-Spritpreisrechner
 };
 let epP = null;
 const endpoints = () => epP ||= fetchT("endpoints.json", 8000, { cache: "no-cache" }).then((r) => r.ok ? r.json() : {}).catch(() => ({}))
   .then((e) => ({ ...EP_DEFAULT, ...e }));
-// Ortssuche (Nominatim): nur auf Knopfdruck, höchstens eine Anfrage pro Sekunde, Treffer zwischengespeichert
+// Ortssuche (Nominatim): nur auf Knopfdruck, höchstens eine Anfrage pro Sekunde, Treffer zwischengespeichert.
+// Preise: nur Deutschland (Tankerkönig); Route: auch die Nachbarländer.
+const GEO_DE = "de", GEO_EU = "de,at,ch,li,it,fr,lu,be,nl,dk,pl,cz,sk,hu,si,hr";
 const geoCache = new Map();
 let geoLast = 0;
-async function geoSearch(q) {
-  const k = q.trim().toLowerCase();
+async function geoSearch(q, cc = GEO_DE) {
+  const k = cc + "|" + q.trim().toLowerCase();
   if (geoCache.has(k)) return geoCache.get(k);
   const wait = geoLast + 1100 - Date.now();
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   geoLast = Date.now();
-  const r = await fetchT(`${(await endpoints()).geocode}?format=jsonv2&countrycodes=de&limit=5&accept-language=de&q=${encodeURIComponent(q)}`, 10000);
+  const r = await fetchT(`${(await endpoints()).geocode}?format=jsonv2&countrycodes=${cc}&addressdetails=1&limit=5&accept-language=de&q=${encodeURIComponent(q)}`, 10000);
   if (!r.ok) throw new Error(`Suche ${r.status}`);
   const res = (await r.json()).map((x) => {
     const a = String(x.display_name || "").split(", ");
     // Adresse: „12, Hauptstraße, Ulm …“ → „Hauptstraße 12“
-    return /^\d+\s*[a-z]?$/i.test(a[0]) && a[1] ? { lat: Number(x.lat), lng: Number(x.lon), label: `${a[1]} ${a[0]}`, sub: a.slice(2, 5).join(", ") }
-      : { lat: Number(x.lat), lng: Number(x.lon), label: a[0], sub: a.slice(1, 4).join(", ") };
+    const c = String(x.address?.country_code || "").toLowerCase();
+    return /^\d+\s*[a-z]?$/i.test(a[0]) && a[1] ? { lat: Number(x.lat), lng: Number(x.lon), label: `${a[1]} ${a[0]}`, sub: a.slice(2, 5).join(", "), cc: c }
+      : { lat: Number(x.lat), lng: Number(x.lon), label: a[0], sub: a.slice(1, 4).join(", "), cc: c };
   });
   geoCache.set(k, res);
   return res;

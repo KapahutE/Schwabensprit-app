@@ -2,6 +2,7 @@
 // Routing: FOSSGIS-Dienst (OSRM, Ausweich: Valhalla), Ortssuche: Nominatim – Adressen in endpoints.json.
 // Preise am Weg: zuerst die Daten der Bases (keine Abfrage). Für Abschnitte außerhalb mit eigenem
 // Tankerkönig-Schlüssel höchstens eine Live-Abfrage pro Minute und nur auf Nutzeraktion (Tankerkönig-Regeln).
+// Österreich: amtliche Preise der E-Control (Spritpreisrechner) für die Abschnitte dort, ohne Schlüssel.
 // Geometrie (Abstand zur Strecke, Kilometer ab Start, Umweg): js/routegeo.js.
 // Alle Teile sind klassische Skripte und teilen sich den globalen Gültigkeitsbereich – Reihenfolge in index.html beachten.
 
@@ -18,6 +19,7 @@ const Route = (() => {
     saved: store.getJ("rtSaved", []),   // gemerkte Strecken [{a, b}]
     depart: null,                        // Abfahrt (ms) – null = jetzt
     fc: new Map(),                       // Preisprognosen der Bases am Weg: id → forecast.json
+    at: [], atBusy: false, atErr: 0,     // Österreich: Abfragen bei der E-Control [{lat, lng, ft, at, stations}], atErr = Zeit des letzten Fehlschlags
   };
   let goSeq = 0;   // nur die zuletzt gestartete Berechnung darf ihr Ergebnis zeigen
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -85,7 +87,13 @@ const Route = (() => {
   }
   // Echter Umweg: eine Matrix-Anfrage (OSRM table) für die interessantesten Tankstellen am Weg –
   // Start → Tankstelle → Ziel minus Start → Ziel, in km und Minuten, dazu die Fahrzeit bis zur Tankstelle
+  let detBusy = null, detAgain = false;
   async function refineDetours() {
+    if (detBusy) { detAgain = true; return detBusy; }   // läuft schon: danach einmal nachziehen (nur noch fehlende Tankstellen)
+    detBusy = refineOnce().finally(() => { detBusy = null; if (detAgain) { detAgain = false; refineDetours(); } });
+    return detBusy;
+  }
+  async function refineOnce() {
     const R = S.route;
     if (!R) return;
     const ep = ((await endpoints()).routing || []).find((e) => e.type === "osrm");
@@ -143,7 +151,8 @@ const Route = (() => {
       S.busy = false; saveLast(); paint();
       await ensureBases();
       // außerhalb der Bases: höchstens eine Live-Abfrage für diese Aktion (Tankerkönig: 1/Minute, app-weit)
-      if (seq === goSeq && store.get("tk", "") && uncovered().km > 0.5 && !tkWait()) await loadLiveNext();
+      if (seq === goSeq && store.get("tk", "") && uncovered().km > 0.5 && !tkWait()) await loadLiveNext(false);
+      if (seq === goSeq) await loadAT();
       if (seq === goSeq) await refineDetours();
     } catch (e) {
       if (seq !== goSeq) return;
@@ -151,6 +160,99 @@ const Route = (() => {
         : e.user ? e.message
         : `${say("Dr Routendienst isch grad net z'erreicha.", "Der Routendienst ist gerade nicht erreichbar.")} (${e.name === "AbortError" ? "Zeitüberschreitung" : e.message})`;
     } finally { if (seq === goSeq) { S.busy = false; paint(); } }
+  }
+
+  // ---- Österreich: amtliche Preise der E-Control (Spritpreisrechner) – ohne Schlüssel, je Abfrage eine Sorte und
+  // höchstens 10 Tankstellen, mit Preis nur die günstigsten der Gegend. Die Landesgrenze (OpenStreetMap, auf ca. 0,5 km
+  // vereinfacht, Polyline mit 3 Nachkommastellen) entscheidet nur, wo abgefragt wird; welche Tankstelle in Österreich liegt, sagt die Datenquelle.
+  const AT_POLY = decodePolyline("g{{AklSfBl@d@WNq@xAOd@lA`A?I`@Pp@lC`CHbAx@~BK|@Lt@QBa@O]gA]^oBgASjBl@^M|Ah@d@yAZS`@e@iA{@ZDj@_Ap@JvA_@ZIQc@|@q@KDVNIEl@Nd@c@pAd@Je@tB_AU_@t@LbAlB|@TlBe@pFzAE`AaAO[ZYHiAb@\\x@O\\k@d@VHjA\\d@bA`@zApBx@gAb@\\d@aAdAf@L_A\\WEYl@Y`@Zv@YFj@b@HRs@UaBd@gAHeCp@eBOqATJf@i@t@h@v@Ij@yBEqAZW?w@p@cAX@DgAf@c@S_C]q@?mA{@LeA]ToBIe@k@NMg@gAe@UsAp@kA`@Dh@aCjBn@x@IJiDVPkAqFV{@TDx@kCp@jARGDu@Uy@h@w@Mu@d@sAWoAPkEmA[a@wA}@ViA}@k@Je@e@Do@Wq@s@?G}@NW{@aFLa@Kk@r@}AScAgAmAJcAh@s@y@oDh@kAA{Ah@a@De@m@eAAkBoAaD?{@a@_ADsA[m@BaAc@a@Fq@e@eCRqAX[Rn@~@VNpAK`@b@r@p@a@f@Jp@iAl@p@N{A~@q@a@u@L_AtAaAr@n@VQf@NNqCtBu@v@uB@}@RKAgAp@yAQsBRm@IaBl@oAYyAd@uAEWh@EHe@KuC^mFMmAXeDhAmCQy@RgBe@o@Dq@WCLkATBDe@OyCd@_@IqAXSEgBf@qBHcEV_@[iACaDnA{DWyA^mCr@Y`@w@Sw@@w@Tc@W{AXuA_@oEn@YPgAYuAlBsASc@mB[M_Co@m@F_@gA_@RY]YLMMWJq@ScA{@YMPyB}AI}@Re@e@EJOc@q@~@m@eB{BLqA]q@Rk@S_@h@uD[aCEaF`@uAn@IKs@L[o@_B}@Ji@eBReAWo@[FLkFm@oCVoCh@eANeBp@oAoBNIr@eAd@qBYo@LKeCs@cAUqAy@{@C_@eAi@Jk@Uo@[ECu@eB[^YBmA[OVm@MoAVe@Ug@Ru@OaA{@~AP^MPQKa@wCc@~Ai@R]kAY@Gy@k@VL|Bs@Se@PBr@SR_@?@c@o@Ke@T?eAu@k@kBn@e@|@Gc@s@Qo@^CoAf@Wk@g@HuBYIiAaDc@Os@b@SkA{@q@s@bBmAOm@pANtBs@tBL`@c@pBOb@Qi@k@G\\w@o@q@c@gB[^]WOyB@q@`@k@LaCjBw@C}Ck@Ua@w@bAOg@sLg@l@cCd@[m@g@t@SIg@rASOKeCiBw@Mj@u@s@Sj@gAcCo@dBTf@Ul@]i@Qf@Se@_@\\e@i@i@z@m@JD|@}@bB_Cz@w@UObA_@\\m@X][WhAUAEz@y@RCa@u@AQY{@Zu@oAi@KBi@a@DSy@i@Uw@b@{AGKh@}AGKXa@Qq@`@Il@TRIdATbAUtA]RKj@RrAiBd@CjC}@hB^j@UtBtAp@jApB?b@c@`@\\XUfBInJ_AfEs@vAc@OI^PLg@\\Ft@O?FWQLJXc@NNXOh@MQSRBzBl@r@QxAHd@sAzCBbAc@`Ck@T_@bALVM|@{@rBFxBa@t@pA`@KjA`@bA@z@g@Se@d@WIMtD[?Dn@Sf@T|@b@Oh@j@dCa@x@P?T`AWH`@|A\\b@u@Zn@WfCSL@nCxA@|A`DhA\\~AQd@d@@lAk@PAv@m@^p@~AW\\CvA}@`AHr@b@WfAp@GxAh@CEz@l@p@WPa@fBD|@]|AI~BPZEf@OAHz@WCKt@[K@d@[b@YY?{@i@IEp@_A|@I|AuAxB_@fBrB~AZe@?m@PD?f@pCWj@p@l@?f@|@S^dAJZ`@e@dC]Rg@hBN|@{@xBb@H`@x@Op@LVxAg@lB|@r@WnBv@dB`Dz@rCAtChA|H`BbCNjDbAj@f@`Bl@VEv@b@RbAStBuDfBo@PuA^KG]zDcCvCrCP]pAnAXg@DaB_@wAfA}Bf@D~@i@bAfAZOFt@h@Yx@r@V_@x@Ax@vAk@r@TRm@tBo@r@S|@]F@z@Wn@k@\\k@[U}@oA`Ck@k@Tn@a@p@JxFrA~@GlAThAaBrBi@@TvCYr@b@dD]ZmAo@SNfAhBJrAvBiAbAIJr@YANbBYfCNlA[XV`AAzBVtBh@TS|BLpFUn@ZD?t@r@d@z@AR^RbCCpBULzArBHq@j@WIbDVPTlAf@@Pf@DxAaAw@KzAj@|C`@XI|G{@WoAjBUMCdCa@C[{Am@v@l@~Em@t@OnB[F?nBUhAhAt@MbD", 3);
+  function inAT(lat, lng) {
+    if (lat < 46.37 || lat > 49.03 || lng < 9.52 || lng > 17.17) return false;
+    let inside = false;
+    for (let i = 0, j = AT_POLY.length - 1; i < AT_POLY.length; j = i++) {
+      const [yi, xi] = AT_POLY[i], [yj, xj] = AT_POLY[j];
+      if ((yi > lat) !== (yj > lat) && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  const atFuel = (f) => f === "diesel" ? "DIE" : "SUP";   // E10 gibt es in Österreich kaum – dort zählt Super 95
+  const AT_STEP = 20, AT_MAX = 12, AT_KEEP = 15 * 60000;
+  // je Routenpunkt: in Österreich? (einmal je Route berechnet)
+  const atMask = (R) => R.atm ||= Uint8Array.from({ length: R.index.n }, (_, i) => inAT(R.index.lat[i], R.index.lng[i]));
+  // Grenzübergänge Österreich ↔ Nachbarland (Strecken-km); Wackler der groben Grenzlinie < 3 km zusammengefasst
+  function crossings(R) {
+    const ix = R.index, m = atMask(R), out = [];
+    let prev = m[0];
+    for (let i = 1; i < ix.n; i++) {
+      const c = m[i];
+      if (c === prev) continue;
+      const k = (ix.cum[i] + ix.cum[i - 1]) / 2;
+      if (out.length && k - out.at(-1).km < 3) out.pop(); else out.push({ km: k, toAT: c });
+      prev = c;
+    }
+    return out;
+  }
+  // Abfragepunkte alle ~20 km entlang der österreichischen Abschnitte
+  function atPoints(R) {
+    const ix = R.index, m = atMask(R), pts = [];
+    let last = -1e9;
+    for (let i = 0; i < ix.n; i++) {
+      if (!m[i]) continue;
+      if (ix.cum[i] - last >= AT_STEP) { pts.push([ix.lat[i], ix.lng[i]]); last = ix.cum[i]; }
+    }
+    return pts;
+  }
+  // Marke aus dem Namen („OMV - Kufstein …“, „JET TANKSTELLE KUFSTEIN“ → OMV, JET)
+  function atBrand(n) {
+    n = String(n || "Tankstelle").trim();
+    const m = n.match(/^(.+?)\s+-\s+/), w = n.split(/\s+/)[0];
+    if (/^freie tankstelle/i.test(n)) return "Freie Tankstelle";
+    if (m) n = m[1];
+    else if (/^(jet|bp|omv|shell|eni|avanti|turmöl|genol|socar|avia|esso|iq|a1|lagerhaus)$/i.test(w)) n = w;
+    n = n.length <= 4 ? n.toUpperCase() : tidy(n);
+    return BRAND[n.toUpperCase()] || n;
+  }
+  // Öffnungszeiten der E-Control (MO … SO, FE = Feiertag) im Format von schedule()
+  function atHours(oh) {
+    const D = { MO: 0, DI: 1, MI: 2, DO: 3, FR: 4, SA: 5, SO: 6 };
+    const slots = (oh || []).filter((o) => o.day in D && o.from && o.to && !(o.from === "00:00" && o.to === "00:00"))
+      .map((o) => ({ text: o.label || o.day, start: o.from.slice(0, 5), end: o.to.slice(0, 5) === "23:59" ? "24:00" : o.to.slice(0, 5), days: [D[o.day]] }));
+    if (!slots.length) return null;
+    const allDay = Object.values(D).every((d) => slots.some((x) => x.days[0] === d && x.start === "00:00" && x.end === "24:00"));
+    return allDay ? { wholeDay: true, slots: [] } : { wholeDay: false, slots };
+  }
+  const atDone = (la, ln, ft) => S.at.some((q) => q.ft === ft && Date.now() - q.at < AT_KEEP && distKm(la, ln, q.lat, q.lng) < AT_STEP / 2);
+  async function loadAT() {
+    const R = S.route;
+    if (!R || S.atBusy || Date.now() - S.atErr < 120000) return 0;   // nach einem Fehlschlag 2 Min. Pause
+    S.at = S.at.filter((q) => Date.now() - q.at < AT_KEEP);
+    const ft = atFuel(fuel), need = atPoints(R).filter(([la, ln]) => !atDone(la, ln, ft)).slice(0, AT_MAX);
+    if (!need.length) return 0;
+    S.atBusy = true;
+    const url = (await endpoints()).atPrices;
+    if (!url) { S.atBusy = false; return 0; }
+    paint();
+    try {
+      for (const [k, [la, ln]] of need.entries()) {
+        if (S.route !== R) break;
+        if (k) await sleep(600);   // zurückhaltend: nacheinander, mit Pause
+        const q = { lat: la, lng: ln, ft, at: Date.now(), stations: [] };
+        try {
+          const r = await fetchT(`${url}?latitude=${la.toFixed(3)}&longitude=${ln.toFixed(3)}&fuelType=${ft}&includeClosed=false`, 10000);
+          if (!r.ok) throw new Error(`E-Control ${r.status}`);
+          const d = await r.json();
+          q.stations = (Array.isArray(d) ? d : []).filter((x) => x?.location?.latitude != null).map((x) => {
+            const p = (x.prices || []).find((y) => y.fuelType === ft)?.amount ?? null;
+            return { id: "at-" + x.id, brand: atBrand(x.name), street: tidy(x.location.address || ""), place: tidy(x.location.city || ""), lat: x.location.latitude, lng: x.location.longitude,
+              open: x.open !== false, e5: ft === "SUP" ? p : null, e10: ft === "SUP" ? p : null, diesel: ft === "DIE" ? p : null, hours: atHours(x.openingHours), country: "AT" };
+          });
+          S.atErr = 0;
+          S.at.push(q);
+        } catch { S.atErr = Date.now(); break; }   // Dienst gestört: nicht weiter anfragen
+        if (k % 3 === 2) paint();
+      }
+    } finally { S.atBusy = false; paint(); }
+    return need.length;
   }
 
   // ---- Preise am Weg: Bases zuerst, Live-Abschnitte nur auf Knopfdruck
@@ -178,17 +280,18 @@ const Route = (() => {
   function uncovered() {
     const ix = S.route?.index;
     if (!ix) return { km: 0, from: null };
-    let sum = 0, from = null, prev = coveredBy(ix.lat[0], ix.lng[0]);
+    const m = atMask(S.route);   // Österreich: Preise von der E-Control
+    let sum = 0, from = null, prev = m[0] || coveredBy(ix.lat[0], ix.lng[0]);
     if (!prev) from = 0;
     for (let i = 1; i < ix.n; i++) {
-      const c = coveredBy(ix.lat[i], ix.lng[i]);
+      const c = m[i] || coveredBy(ix.lat[i], ix.lng[i]);
       if (!c && !prev) sum += ix.cum[i] - ix.cum[i - 1];
       if (!c && from == null) from = ix.cum[i];
       prev = c;
     }
     return { km: sum, from };
   }
-  async function loadLiveNext() {
+  async function loadLiveNext(refine = true) {   // refine = false: go() zieht die Umwege danach gesammelt nach
     const key = store.get("tk", ""), R = S.route;
     if (!key || !R || S.liveBusy) return;
     if (tkWait()) return toast(say("Tankerkönig erlaubt bloß oi Abfrag pro Minut – glei wieder.", "Tankerkönig erlaubt nur eine Abfrage pro Minute – gleich wieder."));
@@ -208,7 +311,7 @@ const Route = (() => {
       })) });
     } catch (e) { toast(`${say("Live-Preise gehet grad net", "Live-Preise gerade nicht verfügbar")}: ${e.name === "AbortError" ? "Zeitüberschreitung" : e.message}`, 5000); }
     finally { S.liveBusy = false; paint(); }
-    refineDetours();
+    if (refine) refineDetours();
   }
   // Alle bekannten Tankstellen in Routennähe; je Tankstelle der frischeste Stand mit Preis
   function candidates() {
@@ -219,6 +322,12 @@ const Route = (() => {
       if (!o || (n[fuel] != null && (o[fuel] == null || new Date(upd) > new Date(o._upd)))) m.set(s.id, n);
     };
     for (const e of S.live) for (const s of e.stations) add(s, e.updated);
+    const at = new Map();
+    for (const q of S.at) if (Date.now() - q.at < AT_KEEP) for (const s of q.stations) {
+      const o = at.get(s.id);
+      at.set(s.id, o ? { ...o, e5: s.e5 ?? o.e5, e10: s.e10 ?? o.e10, diesel: s.diesel ?? o.diesel, _upd: new Date(Math.max(q.at, Date.parse(o._upd))).toISOString() } : { ...s, _upd: new Date(q.at).toISOString() });
+    }
+    for (const s of at.values()) add(s, s._upd);
     for (const b of bases) {
       const c = baseCache[b.id]?.latest;
       if (c && nearestOnRoute(R.index, b.lat, b.lng, b.radius_km + S.corr + 1)) for (const s of c.stations) add(s, c.updated);
@@ -311,6 +420,7 @@ const Route = (() => {
       Kartendaten © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap-Mitwirkende</a> ·
       <a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noopener">Kartenfehler melden</a> · Suche: Nominatim ·
       Preise: <a href="https://www.tankerkoenig.de" target="_blank" rel="noopener">Tankerkönig</a> / MTS-K (CC BY 4.0) ·
+      Österreich: <a href="https://www.spritpreisrechner.at" target="_blank" rel="noopener">E-Control Spritpreisrechner</a> ·
       Kontakt: <a href="https://github.com/KapahutE/Schwabensprit-app" target="_blank" rel="noopener">GitHub</a></p>`;
     el.innerHTML = h;
     if (R) mountMap();
@@ -335,11 +445,16 @@ const Route = (() => {
     let h = `<section class="card rtsum" aria-live="polite"><span class="eyebrow">${say("Dei Strecke", "Deine Strecke")} · ${FUELS[fuel]} · ± ${S.corr} km</span>
       <div class="big">${km(R.km).replace(",0 km", " km")} <span>≈ ${dur(Math.max(1, Math.round(R.sec / 60)))}${tripCost != null ? ` · Sprit ≈ ${eur2(tripCost)}` : ""}</span></div>
       <div class="sub">${esc(R.from)} → ${esc(R.to)}${depTxt} · ${list.length} ${list.length === 1 ? say("Tankstell", "Tankstelle") : say("Tankstella", "Tankstellen")} ${say("am Weg", "an der Strecke")}${oldest ? ` · Preise ${say("vom", "Stand")} ${esc(ago(oldest))}` : ""}</div>
+      ${S.atBusy ? `<div class="sub rtat"><span class="spin-dot"></span> ${say("Preis vo Öschtrreich (E-Control) kommet …", "Preise aus Österreich (E-Control) werden geladen …")}</div>`
+        : S.atErr && atPoints(R).length ? `<div class="sub rtat">🇦🇹 ${say("D'E-Control isch grad net z'erreicha – für Öschtrreich gibt's grad koine Preis.", "Die E-Control ist gerade nicht erreichbar – für Österreich gibt es gerade keine Preise.")}</div>`
+        : list.some((s) => s.country === "AT") ? `<div class="sub rtat">🇦🇹 ${say("Öschtrreich: amtliche Preis vo dr E-Control – gmeldet werret bloß die billigschte je Gegend", "Österreich: amtliche Preise der E-Control – gemeldet werden nur die günstigsten je Gegend")}${fuel !== "diesel" ? ", Super 95" : ""}.</div>` : ""}
       ${R.a && R.b ? `<div class="row"><button class="btn secondary rtsavebtn" data-rtsave aria-pressed="${isSaved}">${isSaved ? "★ " + say("Gmerkt", "Gemerkt") : "☆ " + say("Strecke merka", "Strecke merken")}</button></div>` : ""}</section>`;
     // Abschnitte ohne Preise
     if (u.km > 0.5) {
       const cool = Math.ceil(tkWait() / 1000);
+      const abroad = [R.a, R.b].some((p) => p?.cc && !["de", "at"].includes(p.cc));
       h += `<div class="card notice"><span class="ic">ℹ️</span><div><b>${say(`Uff ${fmtNum(u.km, 0)} km hen mir koine Preise`, `Für ${fmtNum(u.km, 0)} km fehlen Preise`)}</b> – ${say("dort send koine vo deine Bases.", "dort liegt keine deiner Bases.")}<br>
+        ${abroad ? `${say("Preis gibt's bloß für Deitschland ond Öschtrreich.", "Preise gibt es nur für Deutschland und Österreich.")}<br>` : ""}
         ${key ? `${say("Mit deim Tankerkönig-Schlüssel kasch abschnittsweis Live-Preise lada (oi Abfrag pro Minut).", "Mit deinem Tankerkönig-Schlüssel lassen sich Live-Preise abschnittsweise laden (eine Abfrage pro Minute).")}
           <div class="row" style="margin-top:10px"><button class="btn secondary" data-rtlive${S.liveBusy || cool > 0 ? " disabled" : ""}>${S.liveBusy ? `<span class="spin-dot"></span> ${say("Lädt …", "Lädt …")}` : cool > 0 ? `${say("Nägschder Abschnitt in", "Nächster Abschnitt in")} <span class="rtcool">${cool}</span> s` : say("Nägschda Abschnitt lada", "Nächsten Abschnitt laden")}</button></div>`
         : `${say("Für Live-Preise trag unter ⚙ dein Tankerkönig-Schlüssel ei.", "Für Live-Preise unter ⚙ den Tankerkönig-Schlüssel eintragen.")}<div class="row" style="margin-top:10px"><button class="btn secondary" id="btnSetup">${say("Eistellunga", "Einstellungen")}</button></div>`}</div></div>`;
@@ -370,6 +485,7 @@ const Route = (() => {
             <button class="btn secondary" data-rtmap="${esc(bestValue.id)}">${say("Uff dr Kart", "Auf Karte")}</button></div></section>`;
       }
     } else if (list.length) h += `<div class="card empty"><div class="bigic">🌙</div><b>${say("Grad hot älles zu am Weg", "Gerade alles zu an der Strecke")}</b><p>${say(`Koi offene Tankstell mit ${FUELS[fuel]} uff dr Strecke.`, `Keine geöffnete Tankstelle mit ${FUELS[fuel]} an der Strecke.`)}</p></div>`;
+    h += borderHtml(list, R);
     h += `<div class="card mapcard rtmapcard" id="rtmapslot"></div>`;
     // Liste
     h += `<div class="sec"><h2>${say("Tankstella am Weg", "Tankstellen an der Strecke")}</h2><span class="sub">± ${S.corr} km</span></div>`;
@@ -390,6 +506,33 @@ const Route = (() => {
     if (!rows.length) h += `<div class="empty">${say("Grad hot koine offa.", "Gerade hat keine Tankstelle geöffnet.")}</div>`;
     return h + `</div>`;
   }
+  // „Vor oder nach der Grenze tanken?“ – je Seite die günstigste offene Tankstelle bis 40 km vor/nach dem Übergang
+  const BORDER_KM = 40;
+  function borderHtml(list, R) {
+    const best = (a) => a.reduce((p, s) => pf(s) < pf(p) - 1e-9 || (Math.abs(pf(s) - pf(p)) <= 1e-9 && s.detourKm < p.detourKm) ? s : p);
+    for (const x of R.cross ||= crossings(R)) {
+      const near = list.filter((s) => has(s) && Math.abs(s.alongKm - x.km) <= BORDER_KM);
+      const at = near.filter((s) => s.country === "AT"), de = near.filter((s) => s.country !== "AT");
+      if (!at.length || !de.length) continue;
+      const A = best(at), D = best(de), diff = pf(D) - pf(A);   // > 0: Österreich günstiger
+      const side = (s, flag, where) => `<button class="rtbs${Math.abs(diff) >= 0.005 && (s === A) === (diff > 0) ? " win" : ""}" data-rtmap="${esc(s.id)}">
+        <span class="sub">${flag} ${where}</span><b>${s.pfc[fuel] ? "≈" : ""}${price(pf(s))}</b>
+        <span class="n">${esc(s.brand)} · ${esc(s.place)}</span><span class="sub">${s.country === "AT" && fuel !== "diesel" ? "Super 95 · " : ""}${km(s.alongKm)} · ${offTxt(s)}</span></button>`;
+      const pre = x.toAT ? [D, "🇩🇪"] : [A, "🇦🇹"], post = x.toAT ? [A, "🇦🇹"] : [D, "🇩🇪"];
+      const cheapSide = diff > 0 ? A : D, before = cheapSide === pre[0];
+      const v = Math.abs(diff) < 0.005
+        ? say("Ghupft wie gsprunga – dr Unterschied isch unter oim halba Cent.", "Egal – der Unterschied liegt unter einem halben Cent.")
+        : `${before ? say("<b>Vor dr Grenz</b> tanka", "<b>Vor der Grenze</b> tanken") : say("<b>Nach dr Grenz</b> tanka", "<b>Nach der Grenze</b> tanken")}: ${Math.abs(diff * 100).toFixed(1).replace(".", ",")} ct/l ${say("billiger", "günstiger")} – ${say("macht", "das sind")} <b>${eur2(Math.abs(diff) * TANK())}</b> bei ${fmtNum(TANK(), 0)} l.`;
+      // beide Länder: Preiserhöhungen nur um 12 Uhr – bei Ankunft nach dem nächsten Mittag kann's teurer sein
+      const noon = new Date(); noon.setHours(12, 0, 0, 0);
+      if (noon.getTime() <= Date.now()) noon.setDate(noon.getDate() + 1);
+      const late = !A.pfc[fuel] && A.eta >= noon.getTime() ? `<p class="sub">🕛 ${say("In Öschtrreich derfet d'Preis bloß om 12 nauf – kommsch erscht danach a, ka's bis dahin no deirer werra.", "In Österreich dürfen Preise nur um 12 Uhr steigen – bei Ankunft danach kann es bis dahin teurer werden.")}</p>` : "";
+      return `<section class="card rtborder"><span class="eyebrow">${say("Vor oder nach dr Grenz tanka?", "Vor oder nach der Grenze tanken?")}</span>
+        <div class="rtbx">${side(pre[0], pre[1], say("vor dr Grenz", "vor der Grenze"))}${side(post[0], post[1], say("nach dr Grenz", "nach der Grenze"))}</div>
+        <p class="verdict">${v}</p>${late}</section>`;
+    }
+    return "";
+  }
   // Reihenfolge der Liste (auch für den Sprung von der Karte zur Zeile)
   function displayRows(list) {
     const rows = onlyOpen ? list.filter((s) => has(s)) : list.slice();
@@ -402,15 +545,16 @@ const Route = (() => {
     return `<div class="rtitem${open ? " open" : ""}" id="rt-${esc(s.id)}">
       <button class="item${p ? "" : " closed"}" data-rtst="${esc(s.id)}" aria-expanded="${open}">
         ${badge(s, lv(s))}
-        <div class="info"><div class="name"><span>${esc(s.brand)}</span>${isFav(s.id) ? `<span class="favstar">★</span>` : ""}${o && sch?.short ? `<span class="tag">${esc(sch.short)}</span>` : ""}</div>
+        <div class="info"><div class="name"><span>${esc(s.brand)}</span>${s.country === "AT" ? `<span class="tag at" title="Österreich">🇦🇹</span>` : ""}${isFav(s.id) ? `<span class="favstar">★</span>` : ""}${o && sch?.short ? `<span class="tag">${esc(sch.short)}</span>` : ""}</div>
           <div class="addr">${whenTxt(s)} · ${offTxt(s)} · ${esc(s.place)}</div></div>
-        <div class="p">${p ? `<b>${s.pfc[fuel] ? "≈" : ""}${price(pf(s))}</b><div class="d">${d ? ct(d) : say("billigschde", "günstigste")}</div>` : `<div class="d">${o ? "kein " + FUELS[fuel] : "geschlossen"}${!o && sch?.short ? "<br>" + esc(sch.short) : ""}</div>`}</div>
+        <div class="p">${p ? `<b>${s.pfc[fuel] ? "≈" : ""}${price(pf(s))}</b><div class="d">${d ? ct(d) : say("billigschde", "günstigste")}</div>` : `<div class="d">${o ? (s.country === "AT" ? say("koi Preis gmeldet", "kein Preis gemeldet") : "kein " + FUELS[fuel]) : "geschlossen"}${!o && sch?.short ? "<br>" + esc(sch.short) : ""}</div>`}</div>
       </button>${open ? detailHtml(s) : ""}</div>`;
   }
   function detailHtml(s) {
     const sch = schedule(s, new Date(s.eta)), o = s.o, later = s.eta - Date.now() >= SOON;
+    const fl = s.country === "AT" ? { e5: "Super 95", diesel: "Diesel" } : FUELS, cur = s.country === "AT" && fuel === "e10" ? "e5" : fuel;
     return `<div class="rtdet">
-      <div class="fuelgrid">${Object.keys(FUELS).map((f) => `<div class="ftile${f === fuel ? " on" : ""}"><div class="n">${FUELS[f]}</div><b>${has(s, f) ? (s.pfc[f] ? "≈" : "") + price(pf(s, f)) : "–"}</b>${s.pfc[f] && s[f] != null ? `<div class="r">jetzt ${eurX(s[f])}</div>` : ""}</div>`).join("")}</div>
+      <div class="fuelgrid${s.country === "AT" ? " two" : ""}">${Object.keys(fl).map((f) => `<div class="ftile${f === cur ? " on" : ""}"><div class="n">${fl[f]}</div><b>${has(s, f) ? (s.pfc[f] ? "≈" : "") + price(pf(s, f)) : "–"}</b>${s.pfc[f] && s[f] != null ? `<div class="r">jetzt ${eurX(s[f])}</div>` : ""}</div>`).join("")}</div>
       <div class="sub">${esc(s.street)}, ${esc(s.place)} · ${later ? `${say("Ankunft", "Ankunft")} ≈ ${hm2(s.eta)} Uhr · ` : ""}${o ? (sch?.text ? esc(sch.text) : "geöffnet") : `${later ? say("dann zu", "dann geschlossen") : "geschlossen"}${sch?.short ? " · " + esc(sch.short) : ""}`}<br>
         ${say("Umweg", "Umweg")} ${s.exact ? `${km(s.detourKm)} · +${minTxt(s.detourMin)}` : `≈ ${km(s.detourKm)} (${say("gschätzt", "geschätzt")})`}${s.fillCost != null && has(s) ? ` · ${say("Tankfüllung inkl. Umweg", "Tankfüllung inkl. Umweg")} ${eur2(s.fillCost)}` : ""}</div>
       <div class="row"><a class="btn" href="${esc(gmaps(s))}" target="_blank" rel="noopener">${NAV} Tankstopp (Google Maps)</a>
@@ -525,7 +669,7 @@ const Route = (() => {
     btn.disabled = true;
     $("#rtHits").innerHTML = `<div class="sub" style="padding:8px 4px">Suche …</div>`;
     try {
-      hits = (await geoSearch(q)).map((x) => ({ kind: "place", lat: x.lat, lng: x.lng, label: x.label, sub: x.sub }));
+      hits = (await geoSearch(q, GEO_EU)).map((x) => ({ kind: "place", lat: x.lat, lng: x.lng, label: x.label, sub: x.sub, cc: x.cc }));
       $("#rtHits").innerHTML = hits.length ? hits.map((x, i) => `<button class="opt" data-rthit="${i}"><div class="ic pl">⌖</div><div class="t"><div>${esc(x.label)}</div><div class="sub">${esc(x.sub)}</div></div></button>`).join("")
         : `<div class="sub" style="padding:8px 4px">Nichts gefunden.</div>`;
     } catch { $("#rtHits").innerHTML = `<div class="sub" style="padding:8px 4px">Suche gerade nicht möglich.</div>`; }
@@ -588,12 +732,12 @@ const Route = (() => {
     const main = $("#main");
     if (!$("#rtBody")) main.innerHTML = `<div id="rtBody"></div>`;
     paint();
-    if (S.route) ensureBases();
+    if (S.route) { ensureBases(); loadAT().then((n) => n && refineDetours()); }
   }
   // „Ortsdaten löschen“ in den Einstellungen
   function reset() {
     goSeq++;
-    Object.assign(S, { a: { kind: "gps", label: "Mein Standort" }, b: null, recent: [], saved: [], route: null, busy: false, err: null, open: null, live: [] });
+    Object.assign(S, { a: { kind: "gps", label: "Mein Standort" }, b: null, recent: [], saved: [], route: null, busy: false, err: null, open: null, live: [], at: [], atErr: 0 });
     cache.clear();
   }
   return { render, reset };
