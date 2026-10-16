@@ -181,12 +181,13 @@ const Witz = (() => {
   const played = new Set();      // schon abgespielt (nicht bei jedem Neuaufbau wiederholen)
   function pick() {
     const now = new Date(), h = now.getHours();
-    const day = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 864e5);
+    const day = Math.round(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 864e5);   // fortlaufend, auch über Silvester
     const daily = KEYS.filter((x) => x !== "nachts" && x !== "zwoelfe");   // diese zwei nur zur passenden Uhrzeit
     let k = daily[day % daily.length];
     if (h < 5) k = "nachts";
     else if (h >= 10 && h < 12) k = "zwoelfe";
-    return KEYS[(KEYS.indexOf(k) + extra) % KEYS.length];
+    const pool = [k, ...daily.filter((x) => x !== k)];   // „Nägschder“: nur, was jetzt passt
+    return pool[extra % pool.length];
   }
   const reduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 

@@ -11,7 +11,7 @@ function parseReceipt(raw) {
   const all = lines.join("\n"), low = all.toLowerCase();
   const n = (s) => parseFloat(String(s).replace(/\s/g, "").replace(",", "."));
   const r2 = (v) => Math.round(v * 100) / 100, r3 = (v) => Math.round(v * 1000) / 1000;
-  const out = { fuel: null, premium: false, liters: null, ppl: null, total: null, date: null, time: null, shop: null };
+  const out = { fuel: null, premium: false, liters: null, ppl: null, total: null, date: null, time: null, shop: null, discount: null };
 
   // Menge und Preis je Liter, oft in einer Zeile: „42,15 l x 1,899 EUR/l“ oder „42,15 L * 1,899“
   const LIT = /(\d{1,3}[,.]\d{2,3})\s*(?:l|ltr|lt|liter)\b/;
@@ -36,7 +36,7 @@ function parseReceipt(raw) {
 
   // Betrag: zuerst Summe/Gesamt/Zu zahlen, dann Zahlart-Zeilen (nie MwSt, Rückgeld …), sonst größter Betrag
   const money = (l) => [...l.matchAll(/(?<![\d,.])(\d{1,4}[,.]\d{2})(?![\d,.]|\s*(?:l|ltr|liter)\b|\s*(?:€|eur)?\s*\/)/gi)].map((m) => n(m[1]));
-  const skip = /(mwst|ust|netto|steuer|rückgeld|rueckgeld|gegeben|max\.?\s*betrag|reservier|vorautoris)/i;   // „Max. Betrag“ = Kartenreservierung
+  const skip = /(mwst|ust|netto|steuer|rückgeld|rueckgeld|gegeben|max\.?\s*betrag|reservier|autoris)/i;   // „Max. Betrag“ = Kartenreservierung
   const pick = (re) => {
     const c = lines.filter((l) => re.test(l) && !skip.test(l)).flatMap(money).filter((v) => v >= 1 && v <= 600);
     return c.length ? Math.max(...c) : null;
@@ -55,12 +55,17 @@ function parseReceipt(raw) {
     lines.forEach((l, i) => { for (const m of l.matchAll(/(?<![\d,.])(\d{1,3}[,.]\d{2,3})(?![\d,.])/g)) nums.push({ v: n(m[1]), dec: m[1].length - m[1].search(/[,.]/) - 1, i }); });
     const Ls = out.liters != null ? [{ v: out.liters, i: fuelLine }] : nums.filter((x) => x.v >= 1 && x.v <= 250 && Math.abs(x.v - out.total) > 0.001);
     const Ps = out.ppl != null ? [{ v: out.ppl }] : nums.filter((x) => x.dec === 3 && x.v >= 0.8 && x.v <= 4);
+    // Ziel: die Summe – oder die Summe ohne einen Shop-Artikel (Kaffee, Brezel …)
+    const extra = [0, ...new Set(lines.filter((l) => !skip.test(l)).flatMap(money).filter((v) => v > 0.2 && v < out.total - 1))];
     let hit = null;
-    for (const a of Ls) for (const b of Ps) {
-      const d = Math.abs(a.v * b.v - out.total);
-      if (d <= 0.03 && (!hit || d < hit.d)) hit = { a, b, d };
+    for (const x of extra) for (const a of Ls) for (const b of Ps) {
+      const d = Math.abs(a.v * b.v - (out.total - x)) + (x ? 0.005 : 0);   // ohne Abzug bevorzugt
+      if (d <= 0.035 && (!hit || d < hit.d)) hit = { a, b, d, x };
     }
-    if (hit) { out.liters = hit.a.v; out.ppl = hit.b.v; if (fuelLine < 0 && hit.a.i >= 0) fuelLine = hit.a.i; }
+    if (hit) {
+      out.liters = hit.a.v; out.ppl = hit.b.v; if (fuelLine < 0 && hit.a.i >= 0) fuelLine = hit.a.i;
+      if (hit.x) { out.shop = r2(hit.x); out.total = r2(out.total - hit.x); }
+    }
   }
 
   // Gegenprobe Menge × Preis = Betrag. Stehen Shop-Artikel mit auf dem Beleg (Brezel, Kaffee …), ist die
@@ -68,9 +73,15 @@ function parseReceipt(raw) {
   const { liters: L, ppl: P, total: T } = out;
   const fits = (v) => Math.abs(L * P - v) <= 0.03;      // Rundung Menge × Preis: höchstens wenige Cent
   const plausible = (v) => L && v / L >= 0.8 && v / L <= 4;
+  let shopAmt = null;
+  const disc = lines.filter((l) => /rabatt|nachlass|coupon|gutschein|bonus|ersparnis|abzug|[-−]\s*\d{1,3}[,.]\d{2}\b/i.test(l)).flatMap(money);
   if (L && P && T && !fits(T)) {
     const fuelAmt = lines.flatMap(money).find(fits);
-    if (fuelAmt != null) { if (T - fuelAmt > 0.05) out.shop = r2(T - fuelAmt); out.total = fuelAmt; }   // Shop-Artikel oder Summe verlesen
+    if (fuelAmt != null && T < fuelAmt && disc.some((d) => Math.abs(fuelAmt - d - T) <= 0.02)) out.discount = r2(fuelAmt - T);   // Summe nach Rabatt
+    else if (fuelAmt != null) { if (T - fuelAmt > 0.05) out.shop = r2(T - fuelAmt); out.total = fuelAmt; }   // Shop-Artikel oder Summe verlesen
+    else if ((shopAmt = lines.filter((l) => !skip.test(l)).flatMap(money).find((v) => v > 0.2 && v < T - 1 && fits(T - v))) != null) {
+      out.shop = r2(shopAmt); out.total = r2(T - shopAmt);         // Summe = Kraftstoff + Shop-Artikel (Kraftstoffzeile ohne eigenen Betrag)
+    }
     else if (plausible(T)) out.ppl = r3(T / L);                     // Preis je Liter falsch gelesen
     else if (T / P >= 1 && T / P <= 250) out.liters = r2(T / P);   // Menge falsch gelesen („23,17“ → „3,17“)
   }
@@ -88,19 +99,37 @@ function parseReceipt(raw) {
   const near = fuelLine >= 0 ? lines.slice(Math.max(0, fuelLine - 2), fuelLine + 2).join(" ").toLowerCase() : "";
   out.fuel = fuelOf(near) || fuelOf(low);
   // „100“/„102“ nur als Oktanzahl (Super 100, 102 Oktan) – nicht in Beträgen wie „100,95“
-  out.premium = /v-?power|ultimate|excellium|super\s*plus|max\s*plus|(?:super|e)\s*10[02]\b(?![,.]\d)|\b10[02]\s*(?:oktan|ron)\b/.test(near || low);
+  out.premium = /v-?power|ultimate|excellium|super\s*plus|max\s*plus|\b(?:super|e)\s*10[02]\b(?![,.]\d)|\b10[02]\s*(?:oktan|ron)\b/.test(near || low);
 
   // Datum (TT.MM.JJ[JJ]) und Uhrzeit (HH:MM[:SS])
   const now = new Date();
-  for (const m of all.matchAll(/(?<![\d,.])(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4}|\d{2})(?![\d,])/g)) {
+  let dateLine = -1;
+  dates: for (const [i, l] of lines.entries()) for (const m of l.matchAll(/(?<![\d,.])(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4}|\d{2})(?![\d,])/g)) {
     const y = m[3].length === 2 ? 2000 + +m[3] : +m[3], mo = +m[2], d = +m[1], dt = new Date(y, mo - 1, d);
     if (y >= 2020 && dt.getMonth() === mo - 1 && dt.getDate() === d && dt <= new Date(now.getTime() + 864e5)) {
-      out.date = `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`; break;
+      out.date = `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`; dateLine = i; break dates;
     }
   }
-  const tm = all.match(/(?<![\d,.:])([01]?\d|2[0-3])\s?:\s?([0-5]\d)(?::[0-5]\d)?(?![\d,])/)
-    || all.match(/(?:uhrzeit|zeit)\s*:?\s*([01]?\d|2[0-3])[.:]([0-5]\d)/i);
-  if (tm) out.time = `${String(+tm[1]).padStart(2, "0")}:${tm[2]}`;
+  // Uhrzeiten: keine Spannen („Mo-Sa 06:00-22:00“), keine ISO-/TSE-Zeiten (oft UTC); bevorzugt neben dem Datum oder bei „Uhrzeit“
+  const tms = [];
+  lines.forEach((l, i) => {
+    const t = l.replace(/\d{1,2}\s?[:.]\s?\d{2}\s*(?:-|–|bis)\s*\d{1,2}\s?[:.]\s?\d{2}/gi, " ");
+    for (const m of t.matchAll(/(?<![\d,.:T])([01]?\d|2[0-3])\s?:\s?([0-5]\d)(?::[0-5]\d)?(?![\d,])/g))
+      tms.push({ i, h: m[1], m: m[2], tse: /\btse\b|signatur|utc|\d{4}-\d{2}-\d{2}t/i.test(l), named: /uhrzeit|\bzeit\b/i.test(l) });
+    if (!tms.some((x) => x.i === i)) { const m = l.match(/(?:uhrzeit|\bzeit)\s*:?\s*([01]?\d|2[0-3])[.:]([0-5]\d)/i); if (m) tms.push({ i, h: m[1], m: m[2], named: true }); }
+  });
+  const tm = tms.find((x) => x.i === dateLine && !x.tse) || tms.find((x) => x.named && !x.tse) || tms.find((x) => !x.tse) || tms[0];
+  if (tm) out.time = `${String(+tm.h).padStart(2, "0")}:${tm.m}`;
+  // nur ISO-Angaben (z. B. „TSE-Start: 2026-10-03T14:05:12“, evtl. mit Zeitzone): als letzter Ausweg
+  const iso = all.match(/(20\d{2})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?/);
+  if (iso && (!out.date || !out.time)) {
+    const d = iso[6] ? new Date(iso[0]) : new Date(+iso[1], +iso[2] - 1, +iso[3], +iso[4], +iso[5]);
+    if (!Number.isNaN(d.getTime()) && d.getFullYear() >= 2020 && d <= new Date(now.getTime() + 864e5)) {
+      const p2 = (v) => String(v).padStart(2, "0");
+      out.date ||= `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+      out.time ||= `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+    }
+  }
   return out;
 }
 
@@ -114,6 +143,7 @@ const loadTess = () => tessLoading ||= new Promise((res, rej) => {
   document.head.appendChild(s);
 });
 const canvas = (w, h) => Object.assign(document.createElement("canvas"), { width: Math.max(1, Math.round(w)), height: Math.max(1, Math.round(h)) });
+const free = (...cs) => cs.forEach((c) => { if (c) { c.width = 0; c.height = 0; } });   // Canvas-Speicher sofort freigeben (iOS)
 const scaledTo = (c, k) => { const o = canvas(c.width * k, c.height * k), x = o.getContext("2d"); x.imageSmoothingQuality = "high"; x.drawImage(c, 0, 0, o.width, o.height); return o; };
 // Foto vorbereiten: richtig drehen (EXIF über <img>), auf Arbeitsgröße bringen
 async function prepImage(file, maxSide) {
@@ -122,12 +152,14 @@ async function prepImage(file, maxSide) {
     const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("Bild konnte nicht gelesen werden")); i.src = url; });
     // in Halbierungsschritten mit hoher Qualität verkleinern – Safari skaliert große Fotos sonst grob,
     // die Schrift wird pixelig und die Texterkennung scheitert
-    let c = canvas(img.naturalWidth, img.naturalHeight);
-    c.getContext("2d").drawImage(img, 0, 0);
-    const target = Math.min(1, maxSide / Math.max(c.width, c.height));
+    const W = img.naturalWidth, H = img.naturalHeight, target = Math.min(1, maxSide / Math.max(W, H));
     let k = 1;
-    while (k * 0.5 > target) { c = scaledTo(c, 0.5); k *= 0.5; }
-    return target < k ? scaledTo(c, target / k) : c;
+    while (W * H * k * k > 16e6 || k * 0.25 > target) k *= 0.5;   // sehr große Fotos gleich beim Einlesen halbieren
+    let c = canvas(W * k, H * k);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    while (k * 0.5 > target) { const o = scaledTo(c, 0.5); free(c); c = o; k *= 0.5; }
+    if (target < k) { const o = scaledTo(c, target / k); free(c); c = o; }
+    return c;
   } finally { URL.revokeObjectURL(url); }
 }
 const grayOf = (c) => {
@@ -157,6 +189,7 @@ function rotated(c, deg, fill) {
 // Beleg im Foto finden: heller Bereich (Papier) vor dunklerem Hintergrund
 function paperBox(c, pad = 0.04) {
   const k = Math.min(1, 500 / Math.max(c.width, c.height)), s = scaledTo(c, k), g = grayOf(s), t = otsu(g), W = s.width, H = s.height;
+  free(s);
   const rows = new Uint32Array(H), cols = new Uint32Array(W);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (g[y * W + x] > t) { rows[y]++; cols[x]++; }
   const span = (a) => { const m = Math.max(...a) * 0.35; let i = 0, j = a.length - 1; while (i < j && a[i] < m) i++; while (j > i && a[j] < m) j--; return [i, j]; };
@@ -170,6 +203,7 @@ const cropped = (c, b) => { const o = canvas(b.w, b.h); o.getContext("2d").drawI
 // Schräglage schätzen: bei welchem Winkel liegen die dunklen Textpixel am deutlichsten in Zeilen?
 function skewAngle(c) {
   const k = Math.min(1, 700 / Math.max(c.width, c.height)), s = scaledTo(c, k), g = grayOf(s), W = s.width, H = s.height;
+  free(s);
   // nur der innere Bereich – Ränder und Ecken (Hintergrund) würden die Messung verfälschen
   const inner = [], X0 = W * 0.15 | 0, X1 = W * 0.85 | 0, Y0 = H * 0.12 | 0, Y1 = H * 0.88 | 0;
   for (let y = Y0; y < Y1; y++) for (let x = X0; x < X1; x++) inner.push(g[y * W + x]);
@@ -206,16 +240,20 @@ function flatten(c) {
   return c;
 }
 // Komplette Aufbereitung für die Texterkennung
-async function prepForOcr(file, rot, plain) {
-  let c = await prepImage(file, 3200);
-  if (rot) c = rotated(c, rot, "#000");
+// base: das einmal eingelesene Foto – wird nicht verändert
+function prepForOcr(base, rot, plain) {
+  let c = base;
+  const step = (o) => { if (c !== base) free(c); c = o; };
+  if (rot) step(rotated(c, rot, "#000"));
   // erst Schräglage am Beleg messen, dann das ganze Foto gerade drehen und den Beleg eng ausschneiden
   let box = paperBox(c);
-  const a = skewAngle(box ? cropped(c, box) : c);
-  if (Math.abs(a) >= 0.5) { c = rotated(c, -a, "#000"); box = paperBox(c); }
-  if (box) c = cropped(c, paperBox(c, -0.015) || box);
-  if (c.width < 1400) c = scaledTo(c, 1400 / c.width);          // Schrift groß genug für Tesseract
-  else if (c.width > 2200) c = scaledTo(c, 2200 / c.width);
+  const probe = box ? cropped(c, box) : c, a = skewAngle(probe);
+  if (probe !== c) free(probe);
+  if (Math.abs(a) >= 0.5) { step(rotated(c, -a, "#000")); box = paperBox(c); }
+  if (box) step(cropped(c, paperBox(c, -0.015) || box));
+  if (c.width < 1400) step(scaledTo(c, 1400 / c.width));          // Schrift groß genug für Tesseract
+  else if (c.width > 2200) step(scaledTo(c, 2200 / c.width));
+  if (c === base) c = scaledTo(base, 1);                          // Kopie: der Kontrastfilter ändert das Bild
   return plain ? c : flatten(c);
 }
 const foundOf = (r) => ["fuel", "liters", "ppl", "total", "date", "time"].filter((k) => r[k] != null).length;
@@ -227,23 +265,25 @@ async function readReceipt(file, onProgress) {
     workerPath: absUrl("ocr/worker.min.js"), corePath: absUrl("ocr/"), langPath: absUrl("ocr/"), gzip: true,
     logger: (m) => m.status === "recognizing text" && onProgress?.(m.progress, step),
   });
+  const base = await prepImage(file, 3200);
   try {
     await worker.setParameters({ tessedit_pageseg_mode: "4", preserve_interword_spaces: "1" });
     let best = { text: "", found: -1 };
     // 1. aufbereitet, 2. ohne Kontrastfilter (Tesseract binarisiert selbst), dann gedreht
     for (const [rot, plain] of [[0, false], [0, true], [90, false], [270, false], [180, false]]) {
-      const { data } = await worker.recognize(await prepForOcr(file, rot, plain));
+      const img = prepForOcr(base, rot, plain), { data } = await worker.recognize(img);
+      free(img);
       const found = foundOf(parseReceipt(data.text || ""));
       if (found > best.found) best = { text: data.text || "", found };
       if (best.found >= 6 || (plain && best.found >= 3)) break;   // gedreht nur, wenn aufrecht fast nichts lesbar ist
       step++;
     }
     return best.text;
-  } finally { worker.terminate(); }
+  } finally { worker.terminate(); free(base); }
 }
 async function thumbOf(file) {
   const c = await prepImage(file, 1000);
-  return new Promise((res) => c.toBlob((b) => res(b), "image/jpeg", 0.6));
+  return new Promise((res) => c.toBlob((b) => { free(c); res(b); }, "image/jpeg", 0.6));
 }
 
 // ---- Tankstelle zum Beleg finden (Marke, PLZ, Straße, Ort)

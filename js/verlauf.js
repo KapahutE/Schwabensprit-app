@@ -5,6 +5,10 @@
 function analyse(hist, ids, f) {
   if (!hist?.ts?.length) return null;
   const ts = hist.ts.map((t) => new Date(t));
+  const dayK = ts.map((t) => t.toDateString()), hr = ts.map((t) => t.getHours()), wd = ts.map((t) => (t.getDay() + 6) % 7);
+  // angebrochene Tage (Anfang/Ende des Fensters) verzerren das Tagesmittel – fürs Stundenprofil nur volle Tage
+  const perDay = {}; for (const k of dayK) perDay[k] = (perDay[k] || 0) + 1;
+  const fullDays = Object.values(perDay).some((n) => n >= 20), full = (i) => !fullDays || perDay[dayK[i]] >= 20;
   const st = ids.map((id) => [id, hist.stations[id]?.[f]]).filter(([, a]) => a && a.some((v) => v != null));
   if (!st.length) return null;
   const all = [], perTs = ts.map(() => []), byHour = {}, byWd = {}, ranking = [];
@@ -12,15 +16,15 @@ function analyse(hist, ids, f) {
   for (const [id, arr] of st) {
     const vals = arr.map((v) => v == null ? null : v / 1000);
     const days = {};
-    vals.forEach((v, i) => { if (v != null) (days[ts[i].toDateString()] ||= []).push(v); });
-    const dm = Object.fromEntries(Object.entries(days).map(([k, a]) => [k, mean(a)]));
+    vals.forEach((v, i) => { if (v != null) (days[dayK[i]] ||= []).push(v); });
+    const dm = {}; for (const k in days) dm[k] = mean(days[k]);
     const own = vals.filter((v) => v != null), sm = mean(own);
     ranking.push({ id, mean: sm });
     vals.forEach((v, i) => {
       if (v == null) return;
       all.push(v); perTs[i].push(v);
-      (byHour[ts[i].getHours()] ||= []).push(v - dm[ts[i].toDateString()]);
-      (byWd[(ts[i].getDay() + 6) % 7] ||= []).push(v - sm);
+      if (full(i)) (byHour[hr[i]] ||= []).push(v - dm[dayK[i]]);
+      (byWd[wd[i]] ||= []).push(v - sm);
       if (!lo || v < lo.v) lo = { v, id, t: ts[i] };
       if (!hi || v > hi.v) hi = { v, id, t: ts[i] };
     });
@@ -29,7 +33,8 @@ function analyse(hist, ids, f) {
   const hours = Object.keys(hourAvg).map(Number);
   const wdAvg = Object.fromEntries(Object.entries(byWd).map(([d, a]) => [d, mean(a)]));
   const wds = Object.keys(wdAvg).map(Number);
-  const prev = st.map(([id]) => [ranking.find((r) => r.id === id).mean, hist.prev?.[id]?.[f]]).filter(([, p]) => p != null);
+  const rk = new Map(ranking.map((r) => [r.id, r.mean]));
+  const prev = st.map(([id]) => [rk.get(id), hist.prev?.[id]?.[f]]).filter(([, p]) => p != null);
   ranking.sort((a, b) => a.mean - b.mean);
   return {
     mean: mean(all), lo, hi, hourAvg, wdAvg, ranking,
@@ -38,19 +43,21 @@ function analyse(hist, ids, f) {
     bestWd: wds.length > 1 ? wds.reduce((a, b) => wdAvg[a] <= wdAvg[b] ? a : b) : null,
     trend: prev.length ? mean(prev.map(([m, p]) => m - p / 1000)) : null,
     series: ts.map((t, i) => [t.getTime(), mean(perTs[i])]).filter((p) => p[1] != null),
-    days: new Set(ts.map((t) => t.toDateString())).size,
+    days: new Set(dayK).size,
   };
 }
 // Preisänderungen: changes.json enthält je Tankstelle/Sorte [Minuten seit start, Δ in 1/1000 €, …]
 // Je Änderung: Zeitraum zwischen zwei Abrufen (from–to), in dem sie passiert ist; t = Mitte (für Auswertungen)
 function stationEvents(chg, id, f) {
-  const arr = chg?.stations?.[id]?.[f] || [], t0 = new Date(chg?.start).getTime(), out = [];
+  const arr = chg?.stations?.[id]?.[f] || [], out = [];
+  if (!arr.length) return out;
+  const s0 = new Date(chg.start), at = (m) => new Date(s0.getFullYear(), s0.getMonth(), s0.getDate(), s0.getHours(), s0.getMinutes() + m).getTime();   // Wanduhr (Zeitumstellung)
   if (chg?.v === 2) {
     for (let i = 0; i < arr.length; i += 3) {
-      const to = t0 + arr[i] * 60000, from = to - arr[i + 1] * 60000;
+      const to = at(arr[i]), from = at(arr[i] - arr[i + 1]);
       out.push({ t: new Date((from + to) / 2), from: new Date(from), to: new Date(to), d: arr[i + 2] / 1000 });
     }
-  } else for (let i = 0; i < arr.length; i += 2) out.push({ t: new Date(t0 + arr[i] * 60000), d: arr[i + 1] / 1000 });
+  } else for (let i = 0; i < arr.length; i += 2) out.push({ t: new Date(at(arr[i])), d: arr[i + 1] / 1000 });
   return out;
 }
 const hm = (d) => d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
@@ -103,6 +110,7 @@ function peakNote(series) {
   return `<span>${say(`Spitza meischtens geg ${h} Uhr, im Schnitt ${ct(mean(rise))} überm Tagestief`, `Spitzen meist gegen ${h} Uhr, im Schnitt ${ct(mean(rise))} über dem Tagestief`)}</span>`;
 }
 
+let anaMemo = {};
 function renderAnalysis() {
   if (!view || view.error) return;
   const elA = $("#analysis");
@@ -118,9 +126,10 @@ function renderAnalysis() {
     if (elA) elA.innerHTML = `<div class="skel" style="height:120px;margin-top:6px"></div><div class="skel" style="height:260px"></div>`;
     return;
   }
-  const ids = view.stations.map((s) => s.id);
-  const sum = analyse(cache.history, ids, fuel);
-  const ninfo = noonInfo(cache.changes, ids, fuel);
+  const ids = view.stations.map((s) => s.id), key = `${view.base.id}|${fuel}|${ids.join()}`;
+  if (anaMemo.h !== cache.history || anaMemo.c !== cache.changes || anaMemo.k !== key)
+    anaMemo = { h: cache.history, c: cache.changes, k: key, sum: analyse(cache.history, ids, fuel), ninfo: noonInfo(cache.changes, ids, fuel) };
+  const { sum, ninfo } = anaMemo;
   if (ninfo) {
     // ab wann die Senkungen nach dem Sprung auslaufen (≤ 0,5 ct über dem Tiefstand des Nachmittags/Abends)
     const aft = [...Array(11).keys()].map((i) => 13 + i).filter((h) => sum?.hourAvg?.[h] != null);

@@ -10,7 +10,7 @@ const tbDB = (() => {
   const open = () => p ||= new Promise((res, rej) => {
     const r = indexedDB.open("schwabensprit", 1);
     r.onupgradeneeded = () => r.result.createObjectStore("tankbuch", { keyPath: "id" });
-    r.onsuccess = () => res(r.result);
+    r.onsuccess = () => { const db = r.result; db.onclose = db.onversionchange = () => { p = null; try { db.close(); } catch {} }; res(db); };
     r.onerror = () => { p = null; rej(r.error); };
   });
   const tx = async (mode, fn) => {
@@ -19,13 +19,16 @@ const tbDB = (() => {
       const t = db.transaction("tankbuch", mode), req = fn(t.objectStore("tankbuch"));
       t.oncomplete = () => res(req?.result);
       t.onerror = () => rej(t.error);
+      t.onabort = () => rej(t.error || new Error("Speichern abgebrochen (Speicher voll?)"));
     });
   };
-  return { all: () => tx("readonly", (s) => s.getAll()), put: (e) => tx("readwrite", (s) => s.put(e)), del: (id) => tx("readwrite", (s) => s.delete(id)) };
+  return { all: () => tx("readonly", (s) => s.getAll()), put: (e) => tx("readwrite", (s) => s.put(e)), del: (id) => tx("readwrite", (s) => s.delete(id)),
+    // nur ändern, was noch so gespeichert ist (fn gibt null zurück: nichts tun)
+    upd: (id, fn) => tx("readwrite", (s) => { const r = s.get(id); r.onsuccess = () => { const v = r.result && fn(r.result); if (v) s.put(v); }; return r; }) };
 })();
-let tbEntries = [], tbLoaded = false;
+let tbEntries = [], tbLoaded = false, tbErr = null;
 async function tbLoad() {
-  try { tbEntries = (await tbDB.all()) || []; } catch { tbEntries = []; }
+  try { tbEntries = (await tbDB.all()) || []; tbErr = null; } catch (e) { tbEntries = []; tbErr = e; }
   tbEntries.sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
   tbLoaded = true;
 }
@@ -79,16 +82,25 @@ const verdictOf = (e) => {
 };
 const cmpNote = (e) => e.cmp?.premium ? "Premium" : e.cmp?.outside ? "außerhalb" : e.cmp?.none ? "kein Vergleich" : "";
 // 6: Vergleiche neu berechnen (Homebase gewechselt, oder inzwischen Daten vorhanden)
+let tbRecBusy = null;
+const tbSig = (e) => JSON.stringify([e.date, e.time, e.fuel, e.ppl, e.premium, e.station?.lat, e.station?.lng]);
 async function tbRecompute(all) {
-  if (!tbLoaded) await tbLoad();
-  let n = 0;
-  for (const e of tbEntries) {
-    if (!all && e.cmp && !e.cmp.none) continue;
-    const c = await compareEntry(e).catch(() => null);
-    if (JSON.stringify(c) !== JSON.stringify(e.cmp)) { e.cmp = c; await tbDB.put(e).catch(() => {}); n++; }
-  }
-  if (n) { await tbLoad(); renderTankbuch(); }
-  return n;
+  if (tbRecBusy) return tbRecBusy.then(() => all ? tbRecompute(all) : 0);
+  tbRecBusy = (async () => {
+    if (!tbLoaded) await tbLoad();
+    let n = 0;
+    for (const e of [...tbEntries]) {
+      if (!all && e.cmp && !e.cmp.none) continue;
+      const c = await compareEntry(e).catch(() => null);
+      if (JSON.stringify(c) === JSON.stringify(e.cmp)) continue;
+      const sig = tbSig(e);
+      await tbDB.upd(e.id, (x) => tbSig(x) === sig ? { ...x, cmp: c } : null).catch(() => {});
+      n++;
+    }
+    if (n) { await tbLoad(); renderTankbuch(); }
+    return n;
+  })().finally(() => { tbRecBusy = null; });
+  return tbRecBusy;
 }
 
 // ---- Tankbuch: eigener Bereich (Leiste unten)
@@ -100,12 +112,16 @@ function tbStats(list) {
     if (v) { s.cmpN++; s.saved += v.vsAvg; if (v.best) s.best++; }
   }
   s.ppl = s.liters ? s.cost / s.liters : null;
-  // Verbrauch aus Kilometerständen: Volltankung zu Volltankung
-  const odo = list.filter((e) => e.odo).sort((a, b) => a.odo - b.odo);
-  let km = 0, l = 0, eu = 0;
-  for (let i = 1; i < odo.length; i++) {
-    const d = odo[i].odo - odo[i - 1].odo;
-    if (d > 0 && d < 3000 && odo[i].full !== false) { km += d; l += odo[i].liters || 0; eu += odo[i].total || 0; }
+  // Verbrauch aus Kilometerständen: von Volltankung zu Volltankung (jeweils mit km-Stand); alle Liter dazwischen
+  // zählen mit – auch Teilbetankungen und Tankungen ohne km-Stand
+  const chron = [...list].sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
+  let km = 0, l = 0, eu = 0, last = null, accL = 0, accE = 0;
+  for (const e of chron) {
+    if (last) { accL += e.liters || 0; accE += e.total || 0; }
+    if (e.full === false || !e.odo) continue;
+    const d = last ? e.odo - last.odo : 0;
+    if (last && d > 0 && d < 3000) { km += d; l += accL; eu += accE; }
+    last = e; accL = 0; accE = 0;
   }
   if (km >= 50) { s.cons = l / km * 100; s.per100 = eu / km * 100; s.km = km; }
   return s;
@@ -119,7 +135,7 @@ function monthBars(list, year) {
   const bars = m.map((v, i) => {
     const h = v ? Math.max(2, v / max * (H - 34)) : 0, x = i * bw + bw * 0.2, y = H - 18 - h;
     return `${v ? `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(bw * 0.6).toFixed(1)}" height="${h.toFixed(1)}" rx="2" class="tbbar"><title>${"JFMAMJJASOND"[i]} ${year}: ${eur2(v)}</title></rect>
-      <text x="${(x + bw * 0.3).toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" class="tbval">${Math.round(v)} €</text>` : ""}
+      <text x="${(x + bw * 0.3).toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" class="tbval">${Math.round(v)}</text>` : ""}
       <text x="${(i * bw + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle">${"JFMAMJJASOND"[i]}</text>`;
   }).join("");
   return `<div class="card chartcard"><div class="t">Kosten je Monat</div><div class="s">${year} · in €</div><svg viewBox="0 0 ${W} ${H}" class="tbchart" role="img" aria-label="Tankkosten je Monat ${year}">${bars}</svg></div>`;
@@ -165,6 +181,7 @@ function renderTankbuch() {
       const s = tbStats(months[k]); return [`${k.slice(5)}/${k.slice(0, 4)}`, fmtNum(s.liters, 1), eur2(s.cost), s.ppl ? eur(s.ppl) : "–"];
     }))}
     <div class="sec"><h2>${say("Älle Tankunga", "Alle Tankungen")}</h2><span class="sub">${year}</span></div><div class="list">${rows}</div>`
+    : tbErr ? `<div class="card notice warnbox"><span class="ic">⚠️</span><div><b>${TB_NAME()} konnte nicht geöffnet werden</b><br>${esc(tbErr.message || String(tbErr))} – die Einträge sind nicht verloren. Bitte die App neu starten.</div></div>`
     : `<div class="card empty"><div class="bigic">⛽</div><b>${say("No nix eitrage", "Noch keine Einträge")}</b><p>${say("Fotografier dein nächschda Tankbeleg – d'App liest Sorte, Menge ond Preis aus ond sagt dir, ob's dr Bestpreis war.", "Fotografiere deinen nächsten Tankbeleg – die App liest Sorte, Menge und Preis aus und sagt dir, ob es der Bestpreis war.")}</p></div>`}
     <div class="sec"><h2>Daten</h2></div>
     <div class="row two"><button class="btn secondary" id="btnTbCsv">Als CSV exportieren</button><button class="btn secondary" id="btnTbBackup">Sicherung speichern</button></div>
@@ -173,7 +190,10 @@ function renderTankbuch() {
 }
 
 // ---- Erfassen / Bearbeiten
-let tbEdit = null, tbPhoto = null, tbOrder = [];
+let tbEdit = null, tbPhoto = null, tbOrder = [], tbFormSeq = 0;
+const tbTouched = new Set();   // während des Lesens von Hand geänderte Felder: nicht überschreiben
+["#tbDate", "#tbTime", "#tbFuel", "#tbL", "#tbP", "#tbT", "#tbPremium", "#tbSt"].forEach((id) => $(id).addEventListener("input", () => tbTouched.add(id)));
+const tbImgSet = (blob) => { const el = $("#tbImg"); if (el.src.startsWith("blob:")) URL.revokeObjectURL(el.src); el.src = blob ? URL.createObjectURL(blob) : ""; el.hidden = !blob; };
 let tbStList = [], tbGuess = null, tbSel = "";
 const stLabel = (s) => `${s.brand} · ${s.place}, ${s.street}`;
 async function stationOptions(selId, text) {
@@ -201,7 +221,8 @@ function paintStations(cur = $("#tbSt").value || tbSel) {
 }
 $("#tbStQ").addEventListener("input", () => paintStations());
 function fillForm(e) {
-  $("#tbDate").value = e.date || new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  $("#tbDate").value = e.date || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   $("#tbTime").value = e.time || "";
   $("#tbFuel").value = e.fuel || fuel;
   $("#tbL").value = e.liters != null ? fmtNum(e.liters, 2) : "";
@@ -211,31 +232,43 @@ function fillForm(e) {
   $("#tbFull").checked = e.full !== false;
   $("#tbNote").value = e.note || "";
   $("#tbPremium").checked = !!e.premium;
-  tbOrder = [];
+  tbOrder = []; tbTouched.clear();
 }
 async function openTbForm(entry, file) {
+  const seq = ++tbFormSeq, still = () => seq === tbFormSeq && $("#dlgTb").open;   // gehört das Ergebnis noch zu diesem Dialog?
   tbEdit = entry || null; tbPhoto = entry?.photo || null;
   fillForm(entry || {});
+  // Auswahl sofort auf die gespeicherte Tankstelle setzen – die volle Liste kommt nach
+  tbSel = entry?.station?.id || ""; tbGuess = null; $("#tbStQ").value = "";
+  $("#tbSt").innerHTML = `<option value="">– unbekannt / andere –</option>${entry?.station ? `<option value="${esc(entry.station.id)}">${esc(entry.station.label || "gespeicherte Tankstelle")}</option>` : ""}`;
+  $("#tbSt").value = tbSel;
   $("#tbTitle").textContent = entry ? "Tankung bearbeiten" : file ? "Beleg prüfen" : "Tankung erfassen";
   $("#btnTbDel").hidden = !entry;
-  $("#tbImg").hidden = !tbPhoto; if (tbPhoto) $("#tbImg").src = URL.createObjectURL(tbPhoto);
-  $("#tbOcr").textContent = "";
+  tbImgSet(tbPhoto);
+  $("#tbOcr").textContent = ""; delete $("#tbOcr").dataset.text;
   $("#dlgTb").showModal();
   await stationOptions(entry?.station?.id, null).catch(() => {});
-  if (!file) return;
-  tbPhoto = await thumbOf(file).catch(() => null);
-  if (tbPhoto) { $("#tbImg").src = URL.createObjectURL(tbPhoto); $("#tbImg").hidden = false; }
+  if (!file || !still()) return;
+  const thumb = await thumbOf(file).catch(() => null);
+  if (!still()) return;
+  tbPhoto = thumb; if (thumb) tbImgSet(thumb);
   $("#tbOcr").innerHTML = `<span class="spin-dot"></span> Beleg wird gelesen … (beim ersten Mal wird der Belegleser geladen, ca. 5 MB)`;
   try {
-    const text = await readReceipt(file, (p, step) => { $("#tbOcr").innerHTML = `<span class="spin-dot"></span> Beleg wird gelesen${step ? ` (${step + 1}. Versuch, gedreht)` : ""} … ${Math.round(p * 100)} %`; });
-    const r = parseReceipt(text);
+    const text = await readReceipt(file, (p, step) => { if (still()) $("#tbOcr").innerHTML = `<span class="spin-dot"></span> Beleg wird gelesen${step ? ` (${step + 1}. Versuch, gedreht)` : ""} … ${Math.round(p * 100)} %`; });
+    if (!still()) return;
+    const r = parseReceipt(text), keep = new Set(tbTouched);
+    // von Hand Eingetipptes behalten
+    const prem = $("#tbPremium").checked, vals = { "#tbDate": $("#tbDate").value, "#tbTime": $("#tbTime").value, "#tbFuel": $("#tbFuel").value, "#tbL": $("#tbL").value, "#tbP": $("#tbP").value, "#tbT": $("#tbT").value };
     fillForm({ ...r, full: true });
-    const guess = await stationOptions(null, text).catch(() => null);
+    for (const id of keep) if (id in vals) $(id).value = vals[id];
+    if (keep.has("#tbPremium")) $("#tbPremium").checked = prem;
+    const guess = keep.has("#tbSt") ? null : await stationOptions(null, text).catch(() => null);
+    if (!still()) return;
     const found = ["fuel", "liters", "ppl", "total", "date", "time"].filter((k) => r[k] != null).length;
-    $("#tbOcr").innerHTML = `${found >= 5 ? "✅" : "⚠️"} ${found} von 6 Angaben erkannt${guess ? ` · Tankstelle: ${esc(guess.brand)} ${esc(guess.place)}` : ""}${r.shop ? ` · Shop-Artikel (${eur2(r.shop)}) nicht mitgezählt` : ""}. <b>Bitte prüfen</b> – Belege sind nicht immer gut lesbar.`;
+    $("#tbOcr").innerHTML = `${found >= 5 ? "✅" : "⚠️"} ${found} von 6 Angaben erkannt${guess ? ` · Tankstelle: ${esc(guess.brand)} ${esc(guess.place)}` : ""}${r.shop ? ` · Shop-Artikel (${eur2(r.shop)}) nicht mitgezählt` : ""}${r.discount ? ` · Rabatt (${eur2(r.discount)}) abgezogen` : ""}. <b>Bitte prüfen</b> – Belege sind nicht immer gut lesbar.`;
     $("#tbOcr").dataset.text = text;
   } catch (err) {
-    $("#tbOcr").textContent = `⚠️ ${err.message || "Beleg konnte nicht gelesen werden"} – bitte von Hand eintragen.`;
+    if (still()) $("#tbOcr").textContent = `⚠️ ${err.message || "Beleg konnte nicht gelesen werden"} – bitte von Hand eintragen.`;
   }
 }
 // Zwei von Menge / Preis / Betrag eingegeben → dritte Größe ausrechnen
@@ -251,6 +284,7 @@ async function openTbForm(entry, file) {
 async function saveTb() {
   const L = num2($("#tbL").value), P = num2($("#tbP").value), T = num2($("#tbT").value);
   if (!$("#tbDate").value || !L || !P) { toast("Bitte mindestens Datum, Menge und Preis je Liter eintragen.", 4000); return; }
+  if (L < 0 || P < 0 || (T != null && T < 0)) { toast("Menge, Preis und Betrag dürfen nicht negativ sein.", 4000); return; }
   const sid = $("#tbSt").value, opt = $("#tbSt").selectedOptions[0];
   const e = {
     id: tbEdit?.id || `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
@@ -265,7 +299,8 @@ async function saveTb() {
   const warn = [], ord = (x) => x.date + (x.time || "");
   if (e.ppl < 1.2 || e.ppl > 3.2) warn.push(`Preis je Liter ${eurX(e.ppl)} ist ungewöhnlich`);
   if (e.liters > 150) warn.push(`${fmtL(e.liters)} sind sehr viel für eine Tankung`);
-  if (Math.abs(e.liters * e.ppl - e.total) > Math.max(0.1, e.total * 0.02)) warn.push("Menge × Preis passt nicht zum Betrag");
+  const dT = e.total - e.liters * e.ppl;   // kleiner ist ok (Rabatt, z. B. Payback-Coupon), aber nicht beliebig
+  if (dT > Math.max(0.1, e.total * 0.02) || dT < -Math.max(0.1, e.liters * e.ppl * 0.12)) warn.push("Menge × Preis passt nicht zum Betrag");
   if (e.odo) {
     const prev = tbEntries.filter((x) => x.id !== e.id && x.odo && ord(x) < ord(e)).sort((a, b) => ord(b).localeCompare(ord(a)))[0];
     const next = tbEntries.filter((x) => x.id !== e.id && x.odo && ord(x) > ord(e)).sort((a, b) => ord(a).localeCompare(ord(b)))[0];

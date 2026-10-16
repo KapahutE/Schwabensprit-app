@@ -82,6 +82,7 @@ function defaultRepo() {
 const repo = () => store.get("repo", "") || defaultRepo();
 const token = () => store.get("token", "");
 let dataRef = "app-daten";
+if (store.get("dataMode", "") === "api") dataMode = "api";   // gemerkt: beim Start nicht erst neben der App suchen
 async function fetchData(path, asText = false) {
   if (dataMode !== "api") {
     const r = await fetch(`${path}?t=${Date.now()}`, { cache: "no-store" });
@@ -92,7 +93,8 @@ async function fetchData(path, asText = false) {
   // Aufbereitete Daten liegen auf dem Zweig „app-daten“ (ein Stand ohne Verlauf); Rückfall auf „main“
   let r;
   for (const ref of [...new Set([dataRef, "app-daten", "main"])]) {
-    r = await fetch(`https://api.github.com/repos/${repo()}/contents/docs/${path}?ref=${ref}&t=${Date.now()}`, {
+    // ohne Zeitstempel in der Adresse: „no-store“ verhindert alte Daten, und die Vorab-Prüfung (CORS) bleibt zwischengespeichert
+    r = await fetch(`https://api.github.com/repos/${repo()}/contents/docs/${path}?ref=${ref}`, {
       headers: { Authorization: `Bearer ${token()}`, Accept: "application/vnd.github.raw+json" }, cache: "no-store",
     });
     if (r.ok) { if (path === "data/bases.json") dataRef = ref; break; }
@@ -100,7 +102,7 @@ async function fetchData(path, asText = false) {
   }
   if (r.status === 401 || r.status === 403) throw Object.assign(new Error("Schlüssel ungültig oder ohne Leserecht"), { setup: true });
   if (!r.ok) throw new Error(`GitHub ${r.status}`);
-  dataMode = "api";
+  if (dataMode !== "api") { dataMode = "api"; store.set("dataMode", "api"); }
   return asText ? r.text() : r.json();
 }
 async function loadBases() {
@@ -138,22 +140,22 @@ function getPosition() {
 // ---- Laden
 const baseCache = {};
 async function loadBaseData(b) {
-  const latest = await fetchData(`data/${b.id}/latest.json`);
-  const reports = await fetchData(`data/${b.id}/reports.json`).catch(() => []);
-  baseCache[b.id] = { latest, reports, history: baseCache[b.id]?.history?.updated === latest.updated ? baseCache[b.id].history : null };
+  const [latest, reports] = await Promise.all([fetchData(`data/${b.id}/latest.json`), fetchData(`data/${b.id}/reports.json`).catch(() => [])]);
+  // gleicher Datenstand: Verlauf, Änderungen und Prognose behalten (sonst fehlen 12-Uhr-Karte und Prognose bis zum nächsten Abruf)
+  const old = baseCache[b.id], same = !!old?.history && old.history.updated === latest.updated;
+  baseCache[b.id] = { latest, reports, history: same ? old.history : null, changes: same ? old.changes : null, forecast: same ? old.forecast : null };
   return baseCache[b.id];
 }
 async function loadHistory() {
   if (!view?.base) return null;
-  const c = baseCache[view.base.id];
-  if (!c.history) {
-    const [h, ch, fc] = await Promise.all([
-      fetchData(`data/${view.base.id}/history.json`).catch(() => ({ ts: [], stations: {}, prev: {} })),
-      fetchData(`data/${view.base.id}/changes.json`).catch(() => null),
-      fetchData(`data/${view.base.id}/forecast.json`).catch(() => null),
-    ]);
-    c.history = h; c.changes = ch; c.forecast = fc;
-  }
+  const c = baseCache[view.base.id], id = view.base.id;
+  if (!c) return null;
+  // nur eine Abfrage gleichzeitig (Startseite und Detailansicht fragen beide)
+  if (!c.history) await (c.histP ||= Promise.all([
+    fetchData(`data/${id}/history.json`).catch(() => ({ ts: [], stations: {}, prev: {} })),
+    fetchData(`data/${id}/changes.json`).catch(() => null),
+    fetchData(`data/${id}/forecast.json`).catch(() => null),
+  ]).then(([h, ch, fc]) => { c.history = h; c.changes = ch; c.forecast = fc; }));
   return c.history;
 }
 
@@ -225,21 +227,29 @@ function parseDays(text) {
 
 // Lädt alles für den aktuellen Ort und baut die Ansicht
 // liveForce: Live-Preise trotz 5-Minuten-Zwischenspeicher neu holen (nur bei ausdrücklichem Aktualisieren)
+let loadSeq = 0, loadAt = 0;
 async function load(force = false, liveForce = force) {
+  const seq = ++loadSeq; loadAt = Date.now();   // überholte Ladungen (z. B. langsamer Standort) dürfen nichts mehr ändern
   if (force) healthAt = 0;
   if (view && !view.error) $("#main").classList.add("busy");
+  const gpsP = loc.mode === "gps" ? getPosition().then((p) => ({ p }), (e) => ({ e })) : null;   // Standort parallel zu den Daten
+  // Preise der zuletzt gewählten Base gleich mit der Base-Liste anfragen (spart beim Start eine Runde)
+  const preId = loc.mode === "base" && loc.baseId && !baseCache[loc.baseId] ? loc.baseId : null;
+  const preP = preId ? loadBaseData({ id: preId }).catch(() => null) : null;
   try {
     if (!bases.length || force) await loadBases();
   } catch (e) {
+    if (seq !== loadSeq) return;
     view = { error: e, bases: bases.length };
     return render();
   }
+  if (seq !== loadSeq) return;
   if (loc.mode === "base" && !bases.find((b) => b.id === loc.baseId)) loc = { mode: "base", baseId: bases[0]?.id };
-  if (loc.mode === "gps") {
-    try {
-      const p = await getPosition();
-      loc = { mode: "gps", lat: p.latitude, lng: p.longitude, label: "Mein Standort" };
-    } catch (e) { toast(e.message, 5000); if (loc.lat == null) loc = { mode: "base", baseId: bases[0]?.id }; }
+  if (loc.mode === "gps" && gpsP) {
+    const g = await gpsP;
+    if (seq !== loadSeq) return;
+    if (g.p) loc = { mode: "gps", lat: g.p.latitude, lng: g.p.longitude, label: "Mein Standort" };
+    else { toast(g.e.message, 5000); if (loc.lat == null) loc = { mode: "base", baseId: bases[0]?.id }; }
   }
   // Standort nur auf ca. 100 m gerundet speichern (der genaue Wert bleibt nur im Arbeitsspeicher)
   store.setJ("loc", loc.mode === "gps" ? { ...loc, lat: +loc.lat.toFixed(3), lng: +loc.lng.toFixed(3) } : loc);
@@ -250,13 +260,18 @@ async function load(force = false, liveForce = force) {
     let data, reports = [];
     // Live-Preise nur holen, wenn Preise/Verlauf sie zeigen – sonst später beim Wechsel dorthin
     if (src.type === "live") data = tab === "preise" || tab === "verlauf" ? await loadLive(c, liveForce) : { updated: null, stations: [], deferred: true };
-    else if (src.base) ({ latest: data, reports } = await loadBaseData(src.base));
-    else data = { updated: null, stations: [] };
+    else if (src.base) {
+      if (preP && src.base.id === preId) await preP;
+      const bc = baseCache[src.base.id];   // laut bases.json unverändert: nicht neu laden
+      ({ latest: data, reports } = bc?.latest && src.base.updated && bc.latest.updated === src.base.updated ? bc : await loadBaseData(src.base));
+    } else data = { updated: null, stations: [] };
+    if (seq !== loadSeq) return;
     const stations = data.stations
       .map((s) => ({ ...s, dist: s.lat != null ? distKm(c.lat, c.lng, s.lat, s.lng) : null }))
       .filter((s) => s.dist == null || s.dist <= radius + 0.05);
     view = { center: c, src, base: src.base, live: src.type === "live", updated: data.updated, stations, reports, deferred: !!data.deferred };
   } catch (e) {
+    if (seq !== loadSeq) return;
     view = { center: c, src, error: e };
   }
   render();
@@ -300,7 +315,9 @@ function schedule(s, now = new Date()) {
 function state(s) {
   const sch = schedule(s);
   const fresh = view?.updated && Date.now() - new Date(view.updated) < 30 * 60000;
-  const open = !sch || fresh ? s.open : sch.open;
+  // frisch, aber laut Plan seit dem Abruf auf- oder zugemacht (z. B. Abruf 21:52, Schluss 22:00): dann gilt der Plan
+  const flip = sch && fresh && schedule(s, new Date(view.updated))?.open !== sch.open;
+  const open = !sch || (fresh && !flip) ? s.open : sch.open;
   return { open, text: sch && sch.open === open ? sch.text : "", short: sch && sch.open === open ? sch.short : "" };
 }
 const hasPrice = (s, f = fuel) => state(s).open && s[f] != null;
@@ -440,7 +457,13 @@ function render() {
 // ---- Diagramme: schmale Marken, Haarlinien, Hover/Tipp-Tooltip, jede Grafik mit Tabelle
 const CH = {};
 let chSeq = 0;
-const chartBox = (svg, data) => { const id = "c" + ++chSeq; CH[id] = data; return `<div class="cw" data-cid="${id}">${svg}<div class="tt" hidden></div></div>`; };
+let chPrune = 0;
+const chartBox = (svg, data) => {
+  const id = "c" + ++chSeq; CH[id] = data;
+  // später (die Grafik ist dann eingefügt) die Daten nicht mehr angezeigter Grafiken freigeben
+  chPrune ||= setTimeout(() => { chPrune = 0; for (const k in CH) if (!document.querySelector(`[data-cid="${k}"]`)) delete CH[k]; }, 1500);
+  return `<div class="cw" data-cid="${id}">${svg}<div class="tt" hidden></div></div>`;
+};
 const fmtNum = (v, d = 2) => v.toFixed(d).replace(".", ",");
 function barPath(x, y0, w, h, up) {
   const r = Math.min(4, h, w / 2);
@@ -470,7 +493,7 @@ function lineChart(series, opts = {}) {
   }
   if (t1 - t0 > 864e5 * 1.2) {
     const d0 = new Date(t0); d0.setHours(24, 0, 0, 0);
-    for (let d = d0; d.getTime() < t1; d = new Date(d.getTime() + 864e5)) {
+    for (let d = d0; d.getTime() < t1; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
       const x = X(d.getTime()).toFixed(1);
       g += `<line class="gl" x1="${x}" x2="${x}" y1="${T}" y2="${H - B}"/><text x="${(+x + 3).toFixed(1)}" y="${H - 6}">${WD[(d.getDay() + 6) % 7]}</text>`;
     }
@@ -692,6 +715,13 @@ $("#optGps").addEventListener("click", async () => {
 });
 $("#optPlace").addEventListener("click", () => lastPlace && setLoc({ mode: "place", ...lastPlace }));
 // Abruf mit Zeitlimit (hängende Mobilverbindung)
+// Zeitachsen der Daten (changes.json, forecast.json): Minuten ab „start“ in Ortszeit, wie die Wanduhr –
+// über die Zeitumstellung hinweg richtig (der Datenabruf rechnet ebenso)
+const wallAt = (start, min) => { const d = new Date(start); return new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes() + min).getTime(); };
+const wallMin = (start, t) => {
+  const a = new Date(start), b = new Date(t), u = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds());
+  return (u(b) - u(a)) / 60000;
+};
 const fetchT = (url, ms = 15000, opts = {}) => {
   const c = new AbortController(), t = setTimeout(() => c.abort(), ms);
   return fetch(url, { ...opts, signal: c.signal }).finally(() => clearTimeout(t));
@@ -857,6 +887,7 @@ function openSettings() {
   $("#inTank").value = fmtNum(TANK(), 0);
   $("#inCons").value = fmtNum(CONS(), 1);
   $("#testOut").innerHTML = "";
+  $("#dlg").returnValue = "";   // sonst gilt „Wischen/Esc“ nach einem früheren Speichern wieder als Speichern
   $("#dlg").showModal();
 }
 function saveSettings() {
@@ -874,7 +905,7 @@ function saveSettings() {
   } else if ($("#inHome").value) store.set("homeBase", $("#inHome").value);
   store.set("tank", $("#inTank").value || "50");
   store.set("cons", $("#inCons").value || "7");
-  dataMode = null; bases = [];
+  dataMode = null; bases = []; store.set("dataMode", "");
 }
 // Ortsdaten löschen: gesuchte Orte, gemerkte Strecken, letzte Route, Start/Ziel, Live-Zwischenspeicher, Preise-Ort
 $("#btnGeoClear").addEventListener("click", () => {
@@ -914,6 +945,7 @@ $("#btnTest").addEventListener("click", async () => {
 $("#dlg").addEventListener("close", () => { if ($("#dlg").returnValue === "save") { saveSettings(); toast(say("Sodele, gspeichert.", "Gespeichert.")); load(true); } });
 $("#btnReport").addEventListener("click", () => { saveSettings(); $("#dlg").close(); dispatch("report"); });
 $("#btnSettings").addEventListener("click", openSettings);
+$("#btnDlgCancel").addEventListener("click", () => $("#dlg").close("cancel"));
 $("#btnFetch").addEventListener("click", () => dispatch("abrufen"));
 $("#seg").addEventListener("click", (e) => {
   const f = e.target.dataset?.f; if (!f) return;
@@ -967,6 +999,6 @@ window.addEventListener("touchend", async () => {
   ptr.style.opacity = 0; ptr.firstElementChild.style.transform = "";
 });
 
-document.addEventListener("visibilitychange", () => { if (!document.hidden) load(true, false); });   // Live-Preise nur über den Zwischenspeicher
+document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - loadAt > 60000) load(true, false); });   // Live-Preise nur über den Zwischenspeicher
 // Erst starten, wenn alle Teile geladen sind
 document.addEventListener("DOMContentLoaded", () => load(true));

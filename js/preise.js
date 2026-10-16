@@ -8,7 +8,7 @@ const FAV_MAX = 3;
 let favs = store.getJ("favs", []);
 const isFav = (id) => favs.some((f) => f.id === id);
 const saveFavs = () => { store.setJ("favs", favs); renderFavs(); render(); if (detailId) renderDetail(); };
-let favLive = { at: 0, data: {} }, favBusy = false;
+let favLive = { at: 0, data: {} }, favBusy = false, favTry = 0;
 // Aktuelle Daten eines Favoriten: aus der Ansicht, sonst aus einer Base, die ihn abdeckt, sonst live
 function favStation(f) {
   const inView = byId(f.id);
@@ -22,14 +22,15 @@ function favStation(f) {
 }
 const favBases = (f) => f.lat == null ? [] : bases.filter((b) => distKm(b.lat, b.lng, f.lat, f.lng) <= b.radius_km + 0.05);
 async function loadFavData() {
-  if (favBusy || !favs.length || !bases.length) return;
-  favBusy = true;
+  if (favBusy || !favs.length || !bases.length || Date.now() - favTry < 60000) return;
+  favBusy = true; favTry = Date.now();
   try {
     const need = favs.filter((f) => !favStation(f));
     const bs = [...new Set(need.flatMap((f) => favBases(f).slice(0, 1)))];
     await Promise.all(bs.filter((b) => !baseCache[b.id]).map((b) => loadBaseData(b).catch(() => null)));
     const live = favs.filter((f) => !favStation(f) && !favBases(f).length);
     if (live.length && store.get("tk", "") && Date.now() - favLive.at > 5 * 60000) {
+      favLive.at = Date.now();   // auch bei Fehlschlag: nicht gleich wieder fragen
       const r = await fetch(`${TK}/prices.php?ids=${live.map((f) => f.id).join(",")}&apikey=${encodeURIComponent(store.get("tk", ""))}`);
       const d = await r.json();
       if (d.ok) {
@@ -52,7 +53,7 @@ function renderFavs() {
     const hit = favStation(f), s = hit?.s;
     if (!hit) missing = true;
     let right;
-    if (!s) right = `<span class="st">${favBases(f).length || store.get("tk", "") ? "lädt …" : "kein aktueller Preis"}</span>`;
+    if (!s) right = `<span class="st">${(favBases(f).length || store.get("tk", "")) && (favBusy || !favTry) ? "lädt …" : "kein aktueller Preis"}</span>`;
     else if (hasPrice(s)) {
       const d = best == null ? null : s[fuel] - best;
       const df = d == null ? "" : Math.abs(d) < 0.0005 ? (hit.here ? say("billigschde", "günstigste") : "± 0 ct") : ct(d);
@@ -120,15 +121,20 @@ const fcErr = (fc, t) => { const h = Math.min(12, Math.max(1, Math.round((t - Da
 function fcSeries(fc, s, f, maxH = 24) {
   const arr = fc?.ok && fc.stations?.[s.id]?.[f];
   if (!arr) return [];
-  const t0 = new Date(fc.start).getTime(), now = Date.now(), out = [];
+  const now = Date.now(), out = [], ts = fcTimes(fc, arr.length);
   arr.forEach((v, i) => {
-    const t = t0 + i * 36e5;
+    const t = ts[i];
     if (v == null || t < now - 18e5 || t > now + maxH * 36e5) return;
     const sch = schedule(s, new Date(t));
     if (sch && !sch.open) return;
     out.push([t, v / 1000]);
   });
   return out;
+}
+// Zeitpunkte der Prognosewerte (Stunden ab „start“ in Ortszeit), je Prognose einmal berechnet
+function fcTimes(fc, n) {
+  if (!fc._ts || fc._ts.length < n) fc._ts = Array.from({ length: n }, (_, i) => wallAt(fc.start, i * (fc.step_min || 60)));
+  return fc._ts;
 }
 // Günstigster prognostizierter Preis im Umkreis für die nächsten 12 Stunden
 function fcPlan() {
@@ -303,7 +309,7 @@ function noonStale() {
   if (!noonCtx || !view?.updated || view.live) return false;
   const now = new Date(), noon = new Date(now), u = new Date(view.updated);
   noon.setHours(12, 0, 0, 0);
-  return now >= noon && u < noon.getTime() + 25 * 60000 && u > noon.getTime() - 3 * 36e5;
+  return now >= noon && now < noon.getTime() + 90 * 60000 && u < noon.getTime() + 25 * 60000 && u > noon.getTime() - 3 * 36e5;
 }
 const dur = (min) => {
   const h = Math.floor(min / 60), m = min % 60;
@@ -426,6 +432,7 @@ function renderWhen(headOnly = false) {
       ${stripChart(sum.hourAvg)}
       <div class="legend" style="margin-top:6px"><span><i class="kr" style="background:var(--lo)"></i>günstiger</span><span><i class="kr" style="background:var(--hi)"></i>teurer</span><span>▼ jetzt</span><span>ggü. Tagesschnitt</span></div></div>` : "";
   const fcRow = P.ok ? `<details class="tbl wfc" id="fcDetails"${fcOpen ? " open" : ""}><summary>${say("Prognose für de nächschde 12 Stond", "Prognose für die nächsten 12 Stunden")}</summary>${fcChart(P)}</details>`
+    : P.fc?.ok ? `<p class="small wfact">📈 ${say("Für de nächschde Stond gibt's grad koi Prognose – se kommt mit em nägschda Abruf wieder.", "Für die nächsten Stunden liegt gerade keine Prognose vor – sie kommt mit dem nächsten Abruf wieder.")}</p>`
     : P.fc ? `<p class="small wfact">📈 <b>${say("D'Preisprognose lernt no", "Preisprognose lernt noch")}.</b> ${fcLearning(P.fc)}</p>` : "";
   const law = noonCtx ? `<p class="small" style="margin:12px 0 0">${NOON_LAW} Beobachtet: ${fmtNum(noonCtx.info.share * 100, 0)} % aller Preiserhöhungen der letzten Tage lagen zwischen 12 und 13 Uhr.</p>` : "";
   if (!head && !tipRow && !fcRow) { el.innerHTML = ""; return; }
@@ -485,11 +492,11 @@ async function renderDetail() {
   if (view.live) return;
 
   const hist = await loadHistory();
-  if (detailId !== s.id || !hist) return;
+  if (detailId !== s.id || !hist || !view?.base || view.error) return;
   const ts = hist.ts.map((t) => new Date(t).getTime());
   const own = (hist.stations?.[s.id]?.[fuel] || []).map((v) => v == null ? null : v / 1000);
   const ids = view.stations.map((x) => x.id);
-  const regAvg = ts.map((_, i) => mean(ids.map((id) => hist.stations[id]?.[fuel]?.[i]).filter((v) => v != null)) / 1000);
+  const regAvg = ts.map((_, i) => { const m = mean(ids.map((id) => hist.stations[id]?.[fuel]?.[i]).filter((v) => v != null)); return m == null ? null : m / 1000; });
   const pts = ts.map((t, i) => [t, own[i]]).filter((p) => p[1] != null);
   const regPts = ts.map((t, i) => [t, regAvg[i]]).filter((p) => p[1] != null && !Number.isNaN(p[1]));
   let h = "";

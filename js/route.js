@@ -64,6 +64,7 @@ const Route = (() => {
         } else continue;
         if (res.pts.length < 2) throw new Error("leere Route");
         Object.assign(res, { src: ep.name || ep.type, at: Date.now(), key });
+        for (const [k, v] of cache) if (Date.now() - v.at > 10 * 60000) cache.delete(k);   // abgelaufene Routen freigeben
         cache.set(key, res);
         return res;
       } catch (e) { if (e.noRoute) throw e; lastErr = e; }
@@ -79,7 +80,7 @@ const Route = (() => {
   }
   function restoreLast() {
     const x = store.getJ("rtLast", null);
-    if (!x?.geom || Date.now() - x.at > 24 * 36e5 || !samePt(x.a, S.a) || !samePt(x.b, S.b)) return;
+    if (!x?.geom || Date.now() - x.at > 24 * 36e5 || x.a?.kind === "gps" || x.b?.kind === "gps" || !samePt(x.a, S.a) || !samePt(x.b, S.b)) return;
     const pts = decodePolyline(x.geom, 6);
     if (pts.length < 2) return;
     S.route = { pts, km: x.km, sec: x.sec, src: x.src, key: x.key, at: x.at, A: x.A, B: x.B, gps: false, index: routeIndex(pts), from: x.a.label, to: x.b.label, a: x.a, b: x.b, det: new Map(x.det || []) };
@@ -98,12 +99,15 @@ const Route = (() => {
     if (!R) return;
     const ep = ((await endpoints()).routing || []).find((e) => e.type === "osrm");
     if (!ep) return;
-    const near = stationsAlongRoute(R.index, candidates(), { corridorKm: CORRS.at(-1), fuel: "e5" });
-    const pick = new Map();
+    const near = stationsAlongRoute(R.index, candidates(), { corridorKm: CORRS.at(-1), fuel, roadFactor: ROAD, tankL: TANK(), consL100: CONS() });
+    const pick = new Map(), tried = R.tried ||= new Set(), todo = (x) => !R.det.has(x.id) && !tried.has(x.id);
+    // die günstigsten je Sorte und – in derselben Anfrage – die besten inkl. geschätztem Umweg (Kandidaten für „Lohnt sich“)
     for (const f of Object.keys(FUELS))
-      near.filter((x) => x[f] != null && !R.det.has(x.id)).sort((x, y) => x[f] - y[f] || x.offKm - y.offKm).slice(0, 8).forEach((x) => pick.set(x.id, x));
+      near.filter((x) => x[f] != null && todo(x)).sort((x, y) => x[f] - y[f] || x.offKm - y.offKm).slice(0, 8).forEach((x) => pick.set(x.id, x));
+    near.filter((x) => x.fillCost != null && todo(x)).sort((x, y) => x.fillCost - y.fillCost).slice(0, 6).forEach((x) => pick.set(x.id, x));
     const list = [...pick.values()].slice(0, 24);
     if (!list.length) return;
+    list.forEach((x) => tried.add(x.id));
     const at = Math.max(Date.now(), routeLast + 1100);   // gleiche Taktung wie das Routing (≥ 1 s)
     routeLast = at;
     if (at > Date.now()) await sleep(at - Date.now());
@@ -146,7 +150,7 @@ const Route = (() => {
         throw Object.assign(new Error(say("Start ond Ziel sen fast am gleicha Fleck.", "Start und Ziel liegen fast am selben Ort.")), { user: true });
       const r = await fetchRoute(A, B);
       if (seq !== goSeq) return;   // inzwischen neu gewählt/getauscht → dieses Ergebnis verwerfen
-      S.route = { ...r, A, B, gps: a.kind === "gps", index: routeIndex(r.pts), from: a.label, to: b.label, a, b, det: new Map() };
+      S.route = { ...r, A, B, gps: a.kind === "gps" || b.kind === "gps", index: routeIndex(r.pts), from: a.label, to: b.label, a, b, det: new Map() };
       S.open = null; S.all = false; S.fit = true;
       S.busy = false; saveLast(); paint();
       await ensureBases();
@@ -176,7 +180,7 @@ const Route = (() => {
     return inside;
   }
   const atFuel = (f) => f === "diesel" ? "DIE" : "SUP";   // E10 gibt es in Österreich kaum – dort zählt Super 95
-  const AT_STEP = 20, AT_MAX = 12, AT_KEEP = 15 * 60000;
+  const AT_STEP = 20, AT_MAX = 30, AT_KEEP = 15 * 60000;   // 30 Punkte ≈ 600 km – ganz Österreich
   // je Routenpunkt: in Österreich? (einmal je Route berechnet)
   const atMask = (R) => R.atm ||= Uint8Array.from({ length: R.index.n }, (_, i) => inAT(R.index.lat[i], R.index.lng[i]));
   // Grenzübergänge Österreich ↔ Nachbarland (Strecken-km); Wackler der groben Grenzlinie < 3 km zusammengefasst
@@ -222,9 +226,11 @@ const Route = (() => {
     return allDay ? { wholeDay: true, slots: [] } : { wholeDay: false, slots };
   }
   const atDone = (la, ln, ft) => S.at.some((q) => q.ft === ft && Date.now() - q.at < AT_KEEP && distKm(la, ln, q.lat, q.lng) < AT_STEP / 2);
+  let atAgain = false;
   async function loadAT() {
     const R = S.route;
-    if (!R || S.atBusy || Date.now() - S.atErr < 120000) return 0;   // nach einem Fehlschlag 2 Min. Pause
+    if (!R || Date.now() - S.atErr < 120000) return 0;   // nach einem Fehlschlag 2 Min. Pause
+    if (S.atBusy) { atAgain = true; return 0; }          // läuft schon (evtl. für eine alte Route): danach nachziehen
     S.at = S.at.filter((q) => Date.now() - q.at < AT_KEEP);
     const ft = atFuel(fuel), need = atPoints(R).filter(([la, ln]) => !atDone(la, ln, ft)).slice(0, AT_MAX);
     if (!need.length) return 0;
@@ -251,12 +257,21 @@ const Route = (() => {
         } catch { S.atErr = Date.now(); break; }   // Dienst gestört: nicht weiter anfragen
         if (k % 3 === 2) paint();
       }
-    } finally { S.atBusy = false; paint(); }
+    } finally {
+      S.atBusy = false; paint();
+      if (atAgain) { atAgain = false; loadAT().then((n) => n && refineDetours()); }
+    }
     return need.length;
   }
 
   // ---- Preise am Weg: Bases zuerst, Live-Abschnitte nur auf Knopfdruck
-  async function ensureBases() {
+  let ebBusy = null, ebAgain = false;
+  function ensureBases() {
+    if (ebBusy) { ebAgain = true; return ebBusy; }
+    ebBusy = ensureOnce().finally(() => { ebBusy = null; if (ebAgain) { ebAgain = false; ensureBases(); } });
+    return ebBusy;
+  }
+  async function ensureOnce() {
     const R = S.route;
     if (!R) return;
     const stale = (b) => !baseCache[b.id] || (b.updated && baseCache[b.id].latest?.updated !== b.updated);
@@ -335,7 +350,11 @@ const Route = (() => {
     return [...m.values()];
   }
   // Geöffnet? Frische Daten (< 30 Min.) haben Vorrang, sonst zählt der Öffnungsplan (wie state())
-  const isOpen = (s) => { const sch = schedule(s), fresh = s._upd && Date.now() - new Date(s._upd) < 30 * 60000; return !sch || fresh ? !!s.open : sch.open; };
+  const isOpen = (s) => {
+    const sch = schedule(s), fresh = s._upd && Date.now() - new Date(s._upd) < 30 * 60000;
+    const flip = sch && fresh && schedule(s, new Date(s._upd))?.open !== sch.open;   // seit dem Abruf laut Plan auf-/zugemacht
+    return !sch || (fresh && !flip) ? !!s.open : sch.open;
+  };
   const SOON = 20 * 60000;   // Ankunft innerhalb 20 Min.: es gilt der aktuelle Preis
   const fcFor = (id) => { for (const { fc } of S.fc.values()) if (fc?.ok && fc.stations?.[id]) return fc; return null; };
   // Preis zur Ankunftszeit aus der Prognose der Base (stündlich), sonst der aktuelle Preis
@@ -343,7 +362,7 @@ const Route = (() => {
     if (s[f] == null || t - Date.now() < SOON) return { v: s[f], fc: false };
     const fc = fcFor(s.id), arr = fc?.stations[s.id]?.[f];
     if (!arr) return { v: s[f], fc: false };
-    const i = Math.round((t - new Date(fc.start).getTime()) / (fc.step_min * 60000));
+    const i = Math.round(wallMin(fc.start, t) / (fc.step_min || 60));   // Stunden ab „start“ in Ortszeit
     return arr[i] != null ? { v: arr[i] / 1000, fc: true } : { v: s[f], fc: false };
   }
   // Ankunft, Umweg (echt oder geschätzt), Preis und Öffnung bei Ankunft, Tankfüllung inkl. Umweg
@@ -370,12 +389,12 @@ const Route = (() => {
   // ---- Übergabe an Karten-Apps mit der Tankstelle als Zwischenstopp
   function gmaps(s) {
     const R = S.route, q = new URLSearchParams({ api: "1", destination: ll(R.B), waypoints: ll(s), travelmode: "driving" });
-    if (!R.gps) q.set("origin", ll(R.A));
+    if (R.a?.kind !== "gps") q.set("origin", ll(R.A));
     return "https://www.google.com/maps/dir/?" + q;
   }
   function apple(s) {
     const R = S.route, q = new URLSearchParams({ destination: ll(R.B), waypoint: ll(s), mode: "driving" });
-    if (!R.gps) q.set("source", ll(R.A));
+    if (R.a?.kind !== "gps") q.set("source", ll(R.A));
     return "https://maps.apple.com/directions?" + q;
   }
 
@@ -406,7 +425,10 @@ const Route = (() => {
   function paint() {
     const el = $("#rtBody");
     if (!el) return;
-    let h = formHtml();
+    if (!$("#rtFormBox")) el.innerHTML = `<div id="rtFormBox"></div><div id="rtRest"></div>`;
+    const fb = $("#rtFormBox"), fh = formHtml();
+    if (fb._h !== fh && document.activeElement?.id !== "rtDep") { fb.innerHTML = fh; fb._h = fh; }
+    let h = "";
     if (view?.error) h += view.error.setup
       ? `<div class="card notice warnbox"><span class="ic">🔑</span><div><b>Noch nicht eingerichtet</b><br>${say("Ohne GitHub-Schlüssel gibt's koine Preise vo de Bases.", "Ohne GitHub-Schlüssel gibt es keine Preise aus den Bases.")}<div class="row" style="margin-top:10px"><button class="btn" id="btnSetup">Einrichten</button></div></div></div>`
       : `<div class="card notice warnbox"><span class="ic">⚠️</span><div><b>${say("Preise hen se grad net lada lassa", "Preise konnten gerade nicht geladen werden")}</b><br>${esc(view.error.message)} – zum Neuladen nach unten ziehen.</div></div>`;
@@ -422,7 +444,7 @@ const Route = (() => {
       Preise: <a href="https://www.tankerkoenig.de" target="_blank" rel="noopener">Tankerkönig</a> / MTS-K (CC BY 4.0) ·
       Österreich: <a href="https://www.spritpreisrechner.at" target="_blank" rel="noopener">E-Control Spritpreisrechner</a> ·
       Kontakt: <a href="https://github.com/KapahutE/Schwabensprit-app" target="_blank" rel="noopener">GitHub</a></p>`;
-    el.innerHTML = h;
+    $("#rtRest").innerHTML = h;
     if (R) mountMap();
   }
   let lastList = [], lastLv = () => "mid";
@@ -438,7 +460,8 @@ const Route = (() => {
     const lv = (s) => !has(s) || med == null ? "off" : pf(s) <= med - 0.0095 ? "lo" : pf(s) >= med + 0.0095 ? "hi" : "mid";
     lastList = list; lastLv = lv;
     const u = uncovered(), key = store.get("tk", "");
-    const oldest = list.reduce((o, s) => (s._upd && (!o || s._upd < o) ? s._upd : o), null);   // ältester verwendeter Datenstand
+    const oldT = list.reduce((o, s) => { const t = s._upd ? new Date(s._upd).getTime() : NaN; return t < o ? t : o; }, Infinity);
+    const oldest = Number.isFinite(oldT) ? new Date(oldT).toISOString() : null;   // ältester verwendeter Datenstand
     const tripCost = med != null ? R.km * CONS() / 100 * med : null;                            // Sprit für die ganze Fahrt
     const isSaved = S.saved.some((x) => samePt(x.a, R.a) && samePt(x.b, R.b));
     const depTxt = S.depart && S.depart > Date.now() + SOON ? ` · ${say("Abfahrt", "Abfahrt")} ${esc(new Date(S.depart).toLocaleString("de-DE", { weekday: "short", hour: "2-digit", minute: "2-digit" }))}` : "";
@@ -510,9 +533,13 @@ const Route = (() => {
   const BORDER_KM = 40;
   function borderHtml(list, R) {
     const best = (a) => a.reduce((p, s) => pf(s) < pf(p) - 1e-9 || (Math.abs(pf(s) - pf(p)) <= 1e-9 && s.detourKm < p.detourKm) ? s : p);
-    for (const x of R.cross ||= crossings(R)) {
-      const near = list.filter((s) => has(s) && Math.abs(s.alongKm - x.km) <= BORDER_KM);
-      const at = near.filter((s) => s.country === "AT"), de = near.filter((s) => s.country !== "AT");
+    const cr = R.cross ||= crossings(R);
+    for (const [j, x] of cr.entries()) {
+      // bis 40 km vor/nach dem Übergang, aber nicht über den vorigen/nächsten hinaus (z. B. Deutsches Eck); 2 km Spiel für die Grenzlinie
+      const lo = Math.max(x.km - BORDER_KM, j ? cr[j - 1].km : -Infinity), hi = Math.min(x.km + BORDER_KM, j + 1 < cr.length ? cr[j + 1].km : Infinity);
+      const near = list.filter((s) => has(s) && s.alongKm >= lo && s.alongKm <= hi);
+      const sB = near.filter((s) => s.alongKm <= x.km + 2), sA = near.filter((s) => s.alongKm >= x.km - 2);
+      const at = (x.toAT ? sA : sB).filter((s) => s.country === "AT"), de = (x.toAT ? sB : sA).filter((s) => s.country !== "AT");
       if (!at.length || !de.length) continue;
       const A = best(at), D = best(de), diff = pf(D) - pf(A);   // > 0: Österreich günstiger
       const side = (s, flag, where) => `<button class="rtbs${Math.abs(diff) >= 0.005 && (s === A) === (diff > 0) ? " win" : ""}" data-rtmap="${esc(s.id)}">
