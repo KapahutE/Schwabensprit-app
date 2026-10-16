@@ -1,9 +1,10 @@
 {
-  "_hinweis": "Dienst-Adressen für Route, Ortssuche und Preise Österreich (E-Control) – hier austauschbar, ohne den App-Code zu ändern.",
+  "_hinweis": "Dienst-Adressen für Route, Ortssuche und Preise Österreich (E-Control), Ladestationen (MobiData BW) – hier austauschbar, ohne den App-Code zu ändern.",
   "routing": [
     { "type": "osrm", "name": "FOSSGIS OSRM", "url": "https://routing.openstreetmap.de/routed-car/route/v1/driving/" },
     { "type": "valhalla", "name": "FOSSGIS Valhalla", "url": "https://valhalla1.openstreetmap.de/route" }
   ],
   "geocode": "https://nominatim.openstreetmap.org/search",
-  "atPrices": "https://api.e-control.at/sprit/1.0/search/gas-stations/by-address"
+  "atPrices": "https://api.e-control.at/sprit/1.0/search/gas-stations/by-address",
+  "evApi": "https://api.mobidata-bw.de/ocpdb/api/public"
 }

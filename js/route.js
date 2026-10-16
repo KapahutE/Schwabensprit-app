@@ -153,6 +153,7 @@ const Route = (() => {
       S.route = { ...r, A, B, gps: a.kind === "gps" || b.kind === "gps", index: routeIndex(r.pts), from: a.label, to: b.label, a, b, det: new Map() };
       S.open = null; S.all = false; S.fit = true;
       S.busy = false; saveLast(); paint();
+      if (evMode) { const mine = S.route; await Strom.loadAlong(mine, () => S.route === mine && paint()); return; }   // E-Modus: nur Ladestationen am Weg
       await ensureBases();
       // außerhalb der Bases: höchstens eine Live-Abfrage für diese Aktion (Tankerkönig: 1/Minute, app-weit)
       if (seq === goSeq && store.get("tk", "") && uncovered().km > 0.5 && !tkWait()) await loadLiveNext(false);
@@ -443,12 +444,23 @@ const Route = (() => {
       <a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noopener">Kartenfehler melden</a> · Suche: Nominatim ·
       Preise: <a href="https://www.tankerkoenig.de" target="_blank" rel="noopener">Tankerkönig</a> / MTS-K (CC BY 4.0) ·
       Österreich: <a href="https://www.spritpreisrechner.at" target="_blank" rel="noopener">E-Control Spritpreisrechner</a> ·
-      Kontakt: <a href="https://github.com/KapahutE/Schwabensprit-app" target="_blank" rel="noopener">GitHub</a></p>`;
+      Kontakt: <a href="https://github.com/KapahutE/Schwabensprit-app" target="_blank" rel="noopener">GitHub</a></p>${evMode ? `<p class="foot rtfoot">${Strom.ATTR}</p>` : ""}`;
     $("#rtRest").innerHTML = h;
     if (R) mountMap();
   }
   let lastList = [], lastLv = () => "mid";
+  // E-Modus: Ladestationen an der Strecke (js/strom.js)
+  function evResultHtml(R) {
+    const isSaved = S.saved.some((x) => samePt(x.a, R.a) && samePt(x.b, R.b));
+    const ctx = { corr: S.corr, paint, gmaps, apple, focus: (s) => { rtFocus = s; paint(); $("#rtmapslot")?.scrollIntoView({ block: "center", behavior: "smooth" }); } };
+    return `<section class="card rtsum" aria-live="polite"><span class="eyebrow">${say("Dei Strecke", "Deine Strecke")} · ⚡ Strom · ± ${S.corr} km</span>
+      <div class="big">${km(R.km).replace(",0 km", " km")} <span>≈ ${dur(Math.max(1, Math.round(R.sec / 60)))}</span></div>
+      <div class="sub">${esc(R.from)} → ${esc(R.to)}</div>
+      ${R.a && R.b ? `<div class="row"><button class="btn secondary rtsavebtn" data-rtsave aria-pressed="${isSaved}">${isSaved ? "★ " + say("Gmerkt", "Gemerkt") : "☆ " + say("Strecke merka", "Strecke merken")}</button></div>` : ""}</section>`
+      + Strom.routeHtml(R, ctx);
+  }
   function resultHtml(R) {
+    if (evMode) return evResultHtml(R);
     const list = enrich(stationsAlongRoute(R.index, candidates(), { corridorKm: S.corr, fuel, roadFactor: ROAD, tankL: TANK(), consL100: CONS() }), R);
     const priced = list.filter((s) => has(s));
     // Günstigste (Preis bei Ankunft; bei gleichem Preis die mit dem kleineren Umweg) und beste inkl. Umweg
@@ -638,6 +650,7 @@ const Route = (() => {
   function drawMarkers() {
     if (!rtMap || !rtLayer || !document.body.contains(rtEl)) return;
     rtLayer.clearLayers();
+    if (evMode) return Strom.drawRouteMarkers(rtMap, rtLayer);
     const b = rtMap.getBounds().pad(0.1), lv = lastLv;
     const vis = lastList.filter((s) => b.contains([s.lat, s.lng]) && (!onlyOpen || has(s)));
     const priced = vis.filter((s) => has(s)).sort((x, y) => pf(x) - pf(y));
@@ -759,12 +772,14 @@ const Route = (() => {
     const main = $("#main");
     if (!$("#rtBody")) main.innerHTML = `<div id="rtBody"></div>`;
     paint();
-    if (S.route) { ensureBases(); loadAT().then((n) => n && refineDetours()); }
+    if (S.route && evMode) Strom.loadAlong(S.route, paint);
+    else if (S.route) { ensureBases(); loadAT().then((n) => n && refineDetours()); }
   }
   // „Ortsdaten löschen“ in den Einstellungen
   function reset() {
     goSeq++;
     Object.assign(S, { a: { kind: "gps", label: "Mein Standort" }, b: null, recent: [], saved: [], route: null, busy: false, err: null, open: null, live: [], at: [], atErr: 0 });
+    Strom.resetRoute();
     cache.clear();
   }
   return { render, reset };

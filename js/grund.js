@@ -29,6 +29,7 @@ const store = {
 };
 let fuel = store.get("fuel", "e5");
 let onlyOpen = store.get("onlyOpen", "0") === "1";
+let evMode = store.get("ev", "0") === "1";   // E-Modus: Ladestationen statt Tankstellen (js/strom.js)
 let sortBy = store.get("sortBy", "price");
 let viewMode = store.get("viewMode", "list");
 // Ort: {mode: "base"|"gps"|"place", baseId?, lat?, lng?, label?}
@@ -229,7 +230,8 @@ function parseDays(text) {
 // liveForce: Live-Preise trotz 5-Minuten-Zwischenspeicher neu holen (nur bei ausdrücklichem Aktualisieren)
 let loadSeq = 0, loadAt = 0;
 async function load(force = false, liveForce = force) {
-  const seq = ++loadSeq; loadAt = Date.now();   // überholte Ladungen (z. B. langsamer Standort) dürfen nichts mehr ändern
+  const seq = ++loadSeq; loadAt = Date.now();
+  if (evMode && force) Strom.invalidate();   // überholte Ladungen (z. B. langsamer Standort) dürfen nichts mehr ändern
   if (force) healthAt = 0;
   if (view && !view.error) $("#main").classList.add("busy");
   const gpsP = loc.mode === "gps" ? getPosition().then((p) => ({ p }), (e) => ({ e })) : null;   // Standort parallel zu den Daten
@@ -259,7 +261,7 @@ async function load(force = false, liveForce = force) {
   try {
     let data, reports = [];
     // Live-Preise nur holen, wenn Preise/Verlauf sie zeigen – sonst später beim Wechsel dorthin
-    if (src.type === "live") data = tab === "preise" || tab === "verlauf" ? await loadLive(c, liveForce) : { updated: null, stations: [], deferred: true };
+    if (src.type === "live") data = (tab === "preise" || tab === "verlauf") && !evMode ? await loadLive(c, liveForce) : { updated: null, stations: [], deferred: true };
     else if (src.base) {
       if (preP && src.base.id === preId) await preP;
       const bc = baseCache[src.base.id];   // laut bases.json unverändert: nicht neu laden
@@ -421,11 +423,12 @@ function render() {
     const on = b.dataset.tab === tab;
     b.classList.toggle("on", on); on ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current");
   });
-  document.querySelectorAll("#seg button").forEach((b) => b.classList.toggle("on", b.dataset.f === fuel));
-  const c = view?.center;
-  $("#locLabel").textContent = c ? `${c.label} · ${radius} km` : "Ort wählen";
+  document.querySelectorAll("#seg button").forEach((b) => { const on = evMode ? b.dataset.f === "ev" : b.dataset.f === fuel; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
+  const c = view?.center || (evMode ? center() : null);
+  $("#locLabel").textContent = c ? `${c.label} · ${evMode ? Math.min(radius, Strom.MAX_KM) : radius} km` : "Ort wählen";
   const st = $("#stand");
-  if (view?.updated) {
+  if (evMode && tab !== "tankbuch" && tab !== "route") st.innerHTML = "";   // Stand der Ladedaten setzt js/strom.js
+  else if (view?.updated) {
     const age = (Date.now() - new Date(view.updated)) / 60000;
     st.className = "stand" + (age < 20 ? " fresh" : age > 35 ? " old" : "");
     st.innerHTML = `<i></i>${view.live ? "Live · " : ""}Stand ${esc(ago(view.updated))}`;
@@ -436,6 +439,8 @@ function render() {
   if (tab === "tankbuch") { main.innerHTML = `<div id="tbBody"></div>`; return renderTankbuch(); }
   // Die Route braucht nur die Bases (Preise am Weg lädt sie selbst)
   if (tab === "route") return Route.render();
+  // E-Modus: Ladestationen statt Tankstellen – braucht keine Preisdaten von GitHub
+  if (evMode && (tab === "preise" || tab === "verlauf")) return Strom.render(tab);
   if (!view) return;
   if (view.error) {
     main.innerHTML = view.error.setup
@@ -736,6 +741,7 @@ const EP_DEFAULT = {
     { type: "valhalla", name: "FOSSGIS Valhalla", url: "https://valhalla1.openstreetmap.de/route" }],
   geocode: "https://nominatim.openstreetmap.org/search",
   atPrices: "https://api.e-control.at/sprit/1.0/search/gas-stations/by-address",   // Österreich: E-Control-Spritpreisrechner
+  evApi: "https://api.mobidata-bw.de/ocpdb/api/public",                              // Ladestationen und Ladepreise (MobiData BW OCPDB)
 };
 let epP = null;
 const endpoints = () => epP ||= fetchT("endpoints.json", 8000, { cache: "no-cache" }).then((r) => r.ok ? r.json() : {}).catch(() => ({}))
@@ -886,6 +892,7 @@ function openSettings() {
   if (homeBase()) $("#inHome").value = homeBase().id;
   $("#inTank").value = fmtNum(TANK(), 0);
   $("#inCons").value = fmtNum(CONS(), 1);
+  $("#inKwh").value = fmtNum(parseFloat(String(store.get("kwh", "30")).replace(",", ".")) || 30, 0);
   $("#testOut").innerHTML = "";
   $("#dlg").returnValue = "";   // sonst gilt „Wischen/Esc“ nach einem früheren Speichern wieder als Speichern
   $("#dlg").showModal();
@@ -905,6 +912,7 @@ function saveSettings() {
   } else if ($("#inHome").value) store.set("homeBase", $("#inHome").value);
   store.set("tank", $("#inTank").value || "50");
   store.set("cons", $("#inCons").value || "7");
+  store.set("kwh", $("#inKwh").value || "30");
   dataMode = null; bases = []; store.set("dataMode", "");
 }
 // Ortsdaten löschen: gesuchte Orte, gemerkte Strecken, letzte Route, Start/Ziel, Live-Zwischenspeicher, Preise-Ort
@@ -946,10 +954,13 @@ $("#dlg").addEventListener("close", () => { if ($("#dlg").returnValue === "save"
 $("#btnReport").addEventListener("click", () => { saveSettings(); $("#dlg").close(); dispatch("report"); });
 $("#btnSettings").addEventListener("click", openSettings);
 $("#btnDlgCancel").addEventListener("click", () => $("#dlg").close("cancel"));
-$("#btnFetch").addEventListener("click", () => dispatch("abrufen"));
+$("#btnFetch").addEventListener("click", () => { if (evMode && (tab === "preise" || tab === "verlauf")) { toast(say("Ladestationa werret aktualisiert …", "Ladestationen werden aktualisiert …")); return Strom.load(true); } dispatch("abrufen"); });
 $("#seg").addEventListener("click", (e) => {
-  const f = e.target.dataset?.f; if (!f) return;
-  fuel = f; store.set("fuel", f); render();
+  const f = e.target.closest("button")?.dataset?.f; if (!f) return;
+  if (f === "ev") { if (evMode) return; evMode = true; store.set("ev", "1"); }
+  else { const was = evMode; fuel = f; store.set("fuel", f); evMode = false; store.set("ev", "0"); if (was && view?.deferred) load(); }
+  if (detailId) closeDetail();
+  render();
 });
 
 document.addEventListener("click", (e) => {

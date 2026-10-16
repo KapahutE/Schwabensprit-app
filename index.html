@@ -14,7 +14,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
 <title>Schwabensprit</title>
-<link rel="stylesheet" href="app.css?v=421fedd8">
+<link rel="stylesheet" href="app.css?v=3530275d">
 </head>
 <body>
 <div id="ptr"><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></div></div>
@@ -56,9 +56,10 @@
 
 <div class="sticky">
   <div class="seg" id="seg">
-    <button data-f="e5">Super E5</button>
-    <button data-f="e10">Super E10</button>
+    <button data-f="e5" aria-label="Super E5"><span class="lg">Super </span>E5</button>
+    <button data-f="e10" aria-label="Super E10"><span class="lg">Super </span>E10</button>
     <button data-f="diesel">Diesel</button>
+    <button data-f="ev" aria-label="E-Modus: Ladestationen">⚡ Strom</button>
   </div>
 </div>
 
@@ -178,6 +179,7 @@
     <div class="two-in">
       <div><label for="inTank">Tankmenge (Liter)</label><input id="inTank" type="text" inputmode="decimal" placeholder="50"></div>
       <div><label for="inCons">Verbrauch (l/100 km)</label><input id="inCons" type="text" inputmode="decimal" placeholder="7"></div>
+      <div><label for="inKwh">Ladung E-Modus (kWh)</label><input id="inKwh" type="text" inputmode="decimal" placeholder="30"></div>
     </div>
     <label class="check"><input id="inDialect" type="checkbox"> <span>Auf Schwäbisch <span class="small">(Tipps, Überschriften, Wochenfazit)</span></span></label>
     <label class="check"><input id="inWitz" type="checkbox"> <span>Witz vom Dag <span class="small">(Hannes &amp; Lena auf der Startseite)</span></span></label>
@@ -190,6 +192,7 @@
         <li><b>FOSSGIS e.V.</b> (Routing) – Start und Ziel, bei „Mein Standort“ auf ca. 100 m gerundet, sowie Tankstellen am Weg.</li>
         <li><b>OpenStreetMap Foundation</b> – Suchtext bei der Ortssuche (Nominatim) und Kartenausschnitt (Kartenkacheln).</li>
         <li><b>Tankerkönig</b> – nur bei Live-Preisen: ein Punkt (ca. 100 m gerundet) und dein Schlüssel.</li>
+        <li><b>MobiData BW</b> (E-Modus) – Ladestationen: Mittelpunkt auf ca. 100 m gerundet und Radius; im Bereich Route Punkte entlang der Strecke (ebenfalls gerundet).</li>
         <li><b>E-Control</b> (Österreich) – nur bei Routen durch Österreich: Punkte auf der Strecke dort (ca. 100 m gerundet) und die Sorte.</li>
         <li><b>Google Maps / Apple Karten</b> – nur beim Antippen von „Tankstopp“/„Route“: Ziel und Tankstelle, bei festem Start auch der Start.</li>
         <li><b>Google</b> (Logos) – nur die Internetadresse der Tankstellenmarke.</li>
@@ -213,13 +216,14 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="js/grund.js?v=421fedd8"></script>
-<script src="js/witz.js?v=421fedd8"></script>
-<script src="js/preise.js?v=421fedd8"></script>
-<script src="js/verlauf.js?v=421fedd8"></script>
-<script src="js/belegleser.js?v=421fedd8"></script>
-<script src="js/routegeo.js?v=421fedd8"></script>
-<script src="js/route.js?v=421fedd8"></script>
-<script src="js/tankbuch.js?v=421fedd8"></script>
+<script src="js/grund.js?v=3530275d"></script>
+<script src="js/witz.js?v=3530275d"></script>
+<script src="js/preise.js?v=3530275d"></script>
+<script src="js/verlauf.js?v=3530275d"></script>
+<script src="js/belegleser.js?v=3530275d"></script>
+<script src="js/routegeo.js?v=3530275d"></script>
+<script src="js/route.js?v=3530275d"></script>
+<script src="js/strom.js?v=3530275d"></script>
+<script src="js/tankbuch.js?v=3530275d"></script>
 </body>
 </html>
