@@ -20,8 +20,10 @@ const Strom = (() => {
     hideBusy: store.get("evBusy", "0") === "1",
     sort: ["price", "dist", "power"].includes(store.get("evSort", "")) ? store.get("evSort", "") : "price",
     view: store.get("evView", "list") === "map" ? "map" : "list",
-    open: null, all: false, focus: null,
+    basis: ["best", "direct", "card"].includes(store.get("evBasis", "")) ? store.get("evBasis", "") : "best",   // welcher Preis zählt: beste / Direkt / Karte
+    open: null, all: false, focus: null, favSt: new Map(),
   };
+  const FRESH = 2 * 36e5;   // Belegung zählt nur, wenn sie höchstens 2 Std. alt ist (viele Feeds melden nur bei Änderung oder gar nicht mehr)
   const KWH = () => { const v = parseFloat(String(store.get("kwh", "30")).replace(",", ".")); return v > 0 && v <= 200 ? v : 30; };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let seq = 0;
@@ -87,7 +89,8 @@ const Strom = (() => {
       if (ev.presence === "ABSENT") continue;
       for (const k of ev.connectors || []) {
         const kw = (k.max_electric_power || 0) / 1000;
-        cons.push({ std: stdName(k.standard), kw: Math.round(kw * 10) / 10, dc: k.power_type === "DC", tid: k.tariff_ids || [], st: stOf(ev.status), ev: ev.uid });
+        const t = ev.status_last_updated ? Date.parse(ev.status_last_updated) : NaN, raw = stOf(ev.status), fresh = raw !== "unk" && Number.isFinite(t) && Date.now() - t <= FRESH;
+        cons.push({ std: stdName(k.standard), kw: Math.round(kw * 10) / 10, dc: k.power_type === "DC", tid: k.tariff_ids || [], st: fresh ? raw : "unk", raw, ts: Number.isFinite(t) ? t : null, ev: ev.uid });
       }
       seen.add(ev.uid);
     }
@@ -95,7 +98,7 @@ const Strom = (() => {
     const op = x.operator?.name || x.owner?.name || x.name || "Ladestation";
     const upd = (x.evses || []).map((e) => e.status_last_updated).filter(Boolean).sort().at(-1) || null;
     return {
-      id: "ev" + x.id, uid: x.id, src: x.source, brand: shortOp(op) || op, op, place: tidy(x.city || ""), street: tidy(x.address || ""), plz: x.postal_code || "", lat: la, lng: ln,
+      id: "ev" + x.id, uid: x.id, src: x.source, country: x.country || "", brand: shortOp(op) || op, op, place: tidy(x.city || ""), street: tidy(x.address || ""), plz: x.postal_code || "", lat: la, lng: ln,
       cons, live: cons.some((k) => k.st !== "unk"), upd, hours: x.opening_times || null, phone: x.help_phone || "", name: x.name || "",
       kw: Math.max(...cons.map((k) => k.kw)), dist: c ? distKm(c.lat, c.lng, la, ln) : null,
     };
@@ -148,6 +151,7 @@ const Strom = (() => {
       if (my !== seq) return;
       Object.assign(S, { key, at: Date.now(), stations: res.list, total: res.total, cut: res.cut });
       if (!res.list.length) S.err = null;
+      setTimeout(loadFavs, 0);
     } catch (e) {
       if (my !== seq) return;
       S.err = e.name === "AbortError" ? "Zeitüberschreitung" : e.message;
@@ -156,16 +160,70 @@ const Strom = (() => {
 
   // ---- Preise und Belegung einer Station (abhängig vom Leistungsfilter)
   const tariffOf = (k) => { let b = null; for (const id of k.tid) { const t = S.tar?.[id]; if (t && (b == null || (t[0] ?? 9) < (b[0] ?? 9))) b = t; } return b; };
-  function stationView(s) {
-    const cons = s.cons.filter((k) => k.kw >= S.minKw);
+  function stationView(s, minKw = S.minKw) {
+    const cons = s.cons.filter((k) => k.kw >= minKw);
     if (!cons.length) return null;
-    let best = null;
-    for (const k of cons) { const t = tariffOf(k); if (t && t[0] != null && (!best || t[0] < best[0])) best = t; }
+    let dir = null;
+    for (const k of cons) { const t = tariffOf(k); if (t && t[0] != null && (!dir || t[0] < dir[0])) dir = t; }
+    const cd = Karte.best(s, cons), d = dir ? dir[0] : null, c = cd ? cd.p : null;
+    // welcher Preis zählt: Direktpreis des Betreibers, eigene Kartenpreise (Eigeneingabe) oder der niedrigere von beiden
+    let e = null, src = null;
+    if (S.basis === "direct") { e = d; src = d != null ? "direct" : null; }
+    else if (S.basis === "card") { e = c; src = c != null ? "card" : null; }
+    else if (d != null && (c == null || d <= c)) { e = d; src = "direct"; }
+    else if (c != null) { e = c; src = "card"; }
+    const use = src === "direct" ? dir : null;
     const free = new Set(cons.filter((k) => k.st === "free").map((k) => k.ev)).size, all = new Set(cons.map((k) => k.ev)).size;
     const known = cons.some((k) => k.st !== "unk"), out = known && cons.every((k) => k.st === "out");
-    return { s, cons, e: best ? best[0] : null, flat: best ? best[1] : 0, tp: best ? best[2] : 0, tfrom: best ? best[3] : 0, free, all, known, out, full: known && !out && free === 0,
+    const stale = !known && cons.some((k) => k.raw !== "unk");   // gemeldet, aber nicht mehr aktuell
+    return { s, cons, e, src, d, c, card: cd ? cd.card : null, flat: use ? use[1] : 0, tp: use ? use[2] : 0, tfrom: use ? use[3] : 0, free, all, known, stale, out, full: known && !out && free === 0,
+      cardBad: d != null && c != null && c > d + 0.005, cardLow: d != null && c != null && c < d * 0.5,
       kw: Math.max(...cons.map((k) => k.kw)), dc: cons.some((k) => k.dc), open: openNow(s) };
   }
+  // Median der Direktpreise (AC/DC) in der Umgebung – Vergleichswert für die Prüfung eigener Eingaben
+  function market() {
+    const ac = [], dc = [];
+    for (const s of S.stations) for (const k of s.cons) { const t = tariffOf(k); if (t && t[0] != null) (k.dc ? dc : ac).push(t[0]); }
+    const m = {}; if (ac.length >= 8) m.ac = median(ac); if (dc.length >= 8) m.dc = median(dc);
+    return m.ac || m.dc ? m : null;
+  }
+  Karte.setMarket(market);
+  Karte.onChange = () => render();
+  // Hinweise zur laufenden Prüfung: wie oft liegt die Karte über/weit unter dem Direktpreis?
+  const cardStats = (views) => { const both = views.filter((v) => v.d != null && v.c != null); return { n: both.length, bad: both.filter((v) => v.cardBad).length, low: both.filter((v) => v.cardLow).length }; };
+  const NAMES = { free: "frei", busy: "belegt", out: "gestört" };
+
+  // ---- Favoriten (höchstens 5; Name, Betreiber und Koordinaten der Station – keine Nutzerdaten)
+  const FAV_MAX = 5;
+  let favs = store.getJ("evFavs", []);
+  if (!Array.isArray(favs)) favs = [];
+  const same = (f, s) => f.op === s.op ? distKm(f.lat, f.lng, s.lat, s.lng) < 0.06 : distKm(f.lat, f.lng, s.lat, s.lng) < 0.025;
+  const isFav = (s) => favs.some((f) => same(f, s));
+  const saveFavs = () => store.setJ("evFavs", favs);
+  function toggleFav(s) {
+    const i = favs.findIndex((f) => same(f, s));
+    if (i >= 0) { favs.splice(i, 1); toast(say("Aus de Favorita gnomma.", "Aus den Favoriten entfernt.")); }
+    else if (favs.length >= FAV_MAX) return toast(`Höchstens ${FAV_MAX} Favoriten – erst einen entfernen.`, 4000);
+    else { favs.unshift({ op: s.op, lat: s.lat, lng: s.lng, brand: s.brand, place: s.place }); toast(say("★ Als Favorit gmerkt.", "★ Als Favorit gemerkt.")); loadFavs(); }
+    saveFavs();
+  }
+  // Favoriten außerhalb des Umkreises: kleine Suche (100 m) um die Station – findet sie auch, wenn sich ihre Kennung geändert hat
+  async function loadFavs() {
+    const c = center();
+    for (const f of favs) {
+      const k = `${f.lat},${f.lng}`, hit = S.favSt.get(k);
+      if (S.stations.some((s) => same(f, s)) || (hit && Date.now() - hit.at < KEEP)) continue;
+      try {
+        const r = await fetchRaw(f.lat, f.lng, 0.1), list = dedupe(r.items.map((x) => norm(x, null)).filter(Boolean));
+        S.favSt.set(k, { s: list.find((s) => same(f, s)) || null, at: Date.now() });
+      } catch { /* bleibt beim letzten Stand */ }
+    }
+    paint(); void c;
+  }
+  const favStation = (f) => {
+    const s = S.stations.find((x) => same(f, x)) || S.favSt.get(`${f.lat},${f.lng}`)?.s || null, c = center();
+    return s && c && s.dist == null ? { ...s, dist: distKm(c.lat, c.lng, s.lat, s.lng) } : s;
+  };
   // Öffnungszeiten (OCPI): twentyfourseven oder regular_hours [{weekday 1–7, period_begin, period_end}]
   function openNow(s) {
     const h = s.hours;
@@ -185,7 +243,7 @@ const Strom = (() => {
   // ---- Darstellung: Bereich Preise
   const gmaps = (s) => `https://www.google.com/maps/dir/?api=1&destination=${s.lat.toFixed(6)},${s.lng.toFixed(6)}&travelmode=driving`;
   const apple = (s) => `https://maps.apple.com/directions?destination=${s.lat.toFixed(6)},${s.lng.toFixed(6)}&mode=driving`;
-  const avail = (v) => v.out ? `<span class="evst out">gestört</span>` : !v.known ? `<span class="evst unk">Belegung unbekannt</span>`
+  const avail = (v) => v.out ? `<span class="evst out">gestört</span>` : !v.known ? `<span class="evst unk">Belegung unbekannt${v.stale ? " (nicht aktuell)" : ""}</span>`
     : v.full ? `<span class="evst busy">belegt</span>` : `<span class="evst ok">${v.free} von ${v.all} frei</span>`;
   const power = (v) => `${v.dc ? "⚡ DC" : "AC"} ${fmtNum(v.kw, v.kw % 1 ? 1 : 0)} kW`;
   function tariffText(v) {
@@ -198,49 +256,69 @@ const Strom = (() => {
   const sessionCost = (v) => v.e == null ? null : v.e * KWH() + v.flat;
 
   function rows() {
-    let all = S.stations.map(stationView).filter(Boolean);
+    let all = S.stations.map((s) => stationView(s)).filter(Boolean);
     if (S.hideBusy) all = all.filter((v) => !v.full && !v.out);
-    const priced = all.filter((v) => v.e != null);
+    const priced = all.filter((v) => v.e != null), stats = cardStats(all);
     const byPrice = (a, b) => a.e - b.e || a.s.dist - b.s.dist;
     let list;
     if (S.sort === "dist") list = [...all].sort((a, b) => a.s.dist - b.s.dist);
     else if (S.sort === "power") list = [...all].sort((a, b) => b.kw - a.kw || a.s.dist - b.s.dist);
     else list = [...priced].sort(byPrice).concat(all.filter((v) => v.e == null).sort((a, b) => a.s.dist - b.s.dist));
-    return { all, priced, list };
+    return { all, priced, list, stats };
   }
 
-  function itemHtml(v, lv, cheapestE, where, ctx) {
+  const noPrice = (v) => v.s.country && v.s.country !== "DEU" ? "keine Preise<br>in diesem Land" : "kein Preis<br>gemeldet";
+  function itemHtml(v, lv, cheapestE, where, ctx, idp = "ev-") {
     const s = v.s, open = (ctx ? RT.open : S.open) === s.id, d = v.e != null && cheapestE != null ? v.e - cheapestE : null;
-    return `<div class="rtitem${open ? " open" : ""}" id="ev-${esc(s.id)}">
+    return `<div class="rtitem${open ? " open" : ""}" id="${idp}${esc(s.id)}">
       <button class="item evi${v.out || v.open === false ? " closed" : ""}" data-evst="${esc(s.id)}" aria-expanded="${open}">
         ${badge(s, lv(v))}
-        <div class="info"><div class="name"><span>${esc(s.brand)}</span></div>
+        <div class="info"><div class="name"><span>${esc(s.brand)}</span>${isFav(s) ? `<span class="favstar">★</span>` : ""}</div>
           <div class="addr">${where ?? km(s.dist)} · ${power(v)} · ${esc(s.place)}</div>
           <div class="addr">${avail(v)}${v.open === false ? " · <span class=\"evst out\">geschlossen</span>" : ""}</div></div>
-        <div class="p">${v.e != null ? `<b>${eur2s(v.e)}</b><div class="d">€/kWh</div><div class="d">${d && d > 0.0049 ? ct(d) : "günstigste"}</div>` : `<div class="d">kein Preis<br>gemeldet</div>`}</div>
+        <div class="p">${v.e != null ? `<b>${eur2s(v.e)}</b><div class="d">€/kWh${v.src === "card" ? " 💳" : ""}</div><div class="d">${d && d > 0.0049 ? ct(d) : "günstigste"}</div>` : `<div class="d">${noPrice(v)}</div>`}</div>
       </button>${open ? detailHtml(v, ctx) : ""}</div>`;
   }
   function detailHtml(v, ctx) {
     const s = v.s, groups = new Map();
     for (const k of v.cons) {
       const t = tariffOf(k), key = `${k.std}|${k.kw}|${t ? t.join() : ""}`;
-      const g = groups.get(key) || { k, t, n: 0, free: 0, known: false };
-      g.n++; if (k.st === "free") g.free++; if (k.st !== "unk") g.known = true; groups.set(key, g);
+      const g = groups.get(key) || { k, t, n: 0, free: 0, known: false, last: null };
+      g.n++; if (k.st === "free") g.free++; if (k.st !== "unk") g.known = true;
+      if (k.raw !== "unk" && k.ts && (!g.last || k.ts > g.last.ts)) g.last = { ts: k.ts, raw: k.raw };
+      groups.set(key, g);
     }
     const grp = [...groups.values()].sort((a, b) => b.k.kw - a.k.kw);
     const tx = (t) => !t || t[0] == null ? "kein Preis gemeldet" : tariffText({ e: t[0], flat: t[1], tp: t[2], tfrom: t[3] });
-    const cost = sessionCost(v), hrs = s.hours?.twentyfourseven ? "24 Std. zugänglich" : s.hours?.regular_hours?.length ? "Zeiten laut Betreiber" : "";
+    const cost = sessionCost(v), costNote = v.src === "card" ? `mit Karte „${esc(v.card.name)}“, Eigeneingabe` : "Direktbezahlung", hrs = s.hours?.twentyfourseven ? "24 Std. zugänglich" : s.hours?.regular_hours?.length ? "Zeiten laut Betreiber" : "";
     return `<div class="rtdet">
       <div class="evgrps">${grp.map((g) => `<div class="evgrp"><div class="evk"><b>${esc(g.k.std)}</b><span>${g.k.dc ? "DC" : "AC"} ${fmtNum(g.k.kw, g.k.kw % 1 ? 1 : 0)} kW · ${g.n}×</span></div>
-        <div class="evt">${esc(tx(g.t))}</div><div class="evs">${g.known ? `<span class="evst ${g.free ? "ok" : "busy"}">${g.free} von ${g.n} frei</span>` : `<span class="evst unk">Belegung unbekannt</span>`}</div></div>`).join("")}</div>
+        <div class="evt">${esc(tx(g.t))}</div>${cardLine(v, g)}<div class="evs">${g.known ? `<span class="evst ${g.free ? "ok" : "busy"}">${g.free} von ${g.n} frei</span>`
+          : `<span class="evst unk">Belegung unbekannt${g.last ? `<br>zuletzt ${NAMES[g.last.raw] || "gemeldet"} ${esc(ago(new Date(g.last.ts).toISOString()))}` : ""}</span>`}</div></div>`).join("")}</div>
       <div class="sub">${esc(s.street)}${s.plz || s.place ? ", " : ""}${esc((s.plz + " " + s.place).trim())}${hrs ? " · " + hrs : ""}<br>
-        Betreiber: ${esc(s.op)}${s.phone ? ` · <a href="tel:${esc(s.phone.replace(/[^+\d]/g, ""))}">${esc(s.phone)}</a>` : ""}${cost != null ? `<br>≈ ${eur2(cost)} für ${fmtNum(KWH(), 0)} kWh (Direktbezahlung)` : ""}<br>
+        Betreiber: ${esc(s.op)}${s.phone ? ` · <a href="tel:${esc(s.phone.replace(/[^+\d]/g, ""))}">${esc(s.phone)}</a>` : ""}${cost != null ? `<br>≈ ${eur2(cost)} für ${fmtNum(KWH(), 0)} kWh (${costNote})` : ""}<br>
         <span class="small">Quelle: ${esc(SRC[s.src] || s.src)}${s.upd ? ` · Belegung ${esc(ago(s.upd))}` : ""}</span></div>
       <div class="row"><a class="btn" href="${esc((ctx?.gmaps || gmaps)(s))}" target="_blank" rel="noopener">${NAV} ${ctx ? "Ladestopp (Google Maps)" : "Route (Google Maps)"}</a>
         <a class="btn secondary" href="${esc((ctx?.apple || apple)(s))}" target="_blank" rel="noopener">Apple Karten</a>
-        <button class="btn secondary" data-evmap="${esc(s.id)}">Auf Karte</button></div></div>`;
+        <button class="btn secondary" data-evmap="${esc(s.id)}">Auf Karte</button>
+        <button class="btn secondary" data-evfav="${esc(s.id)}" aria-pressed="${isFav(s)}">${isFav(s) ? "★ Favorit" : "☆ Favorit"}</button></div></div>`;
   }
-  const NOTE = `Preise: Direktbezahlung (ohne Ladekarte/Fahrstromvertrag) laut Betreiber, inkl. MwSt. – mit Karte oder App oft anders. Nicht jeder Betreiber meldet Preise.`;
+  // Kartenzeile je Anschlussgruppe: klar als Eigeneingabe gekennzeichnet, mit Warnung, wenn sie teurer als der Direktpreis ist
+  function cardLine(v, g) {
+    const cd = Karte.best(v.s, [g.k]);
+    if (!cd) return "";
+    const dir = g.t && g.t[0] != null ? g.t[0] : null, bad = dir != null && cd.p > dir + 0.005;
+    return `<div class="evt evc${bad ? " bad" : ""}">💳 ${esc(cd.card.name)}: <b>${Karte.f2(cd.p)} €/kWh</b> <span class="small">Eigeneingabe · bestätigt ${esc(Karte.ago(cd.card))}</span>${bad ? `<br>⚠ teurer als Direktzahlung – Eingabe prüfen` : ""}</div>`;
+  }
+  const NOTE = `Preise: Direktbezahlung (ohne Ladekarte/Fahrstromvertrag) laut Betreiber, inkl. MwSt. – mit Karte oder App oft anders; 💳 = deine eigene Eingabe unter „Meine Ladekarte“, nicht vom Betreiber bestätigt. Belegung zählt nur, wenn sie höchstens 2 Std. alt ist. Nicht jeder Betreiber meldet Preise.`;
+  // Auswahl „welcher Preis zählt“ und Zugang zur Karte
+  const basisHtml = () => {
+    const used = Karte.used().length, n = Karte.cards().length;
+    return `${used ? `<div class="chips evchips"><span class="lbl">Preis</span>${[["best", "Beste"], ["direct", "Direkt"], ["card", "💳 Karte"]].map(([k, t]) => `<button class="chip ${S.basis === k ? "on" : ""}" data-evbasis="${k}" aria-pressed="${S.basis === k}">${t}</button>`).join("")}</div>` : ""}
+      <div class="chips"><button class="chip" data-cardopen>💳 Meine Ladekarte${n ? " · " + esc(Karte.statusText()) : ""}</button></div>`;
+  };
+  const foreignNote = (list) => list.some((s) => s.country && s.country !== "DEU")
+    ? `<p class="small" style="margin:6px 4px 0">Außerhalb Deutschlands (z. B. Schweiz) gibt es Standorte und Belegung, aber keine Preise; Kartenpreise (Euro) gelten nur in Deutschland.</p>` : "";
   const FOOT = () => `<p class="foot">Ladedaten: <a href="https://mobidata-bw.de/dataset/e-ladesaulen" target="_blank" rel="noopener">MobiData BW (OCPDB)</a> ·
     Standorte: Bundesnetzagentur (CC BY 4.0) · Preise und Belegung: Betreiber über <a href="https://mobilithek.info" target="_blank" rel="noopener">Mobilithek</a> (chargecloud, EcoMovement, EnBW) ·
     Karte © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></p>`;
@@ -252,29 +330,32 @@ const Strom = (() => {
     if (S.busy && !S.stations.length) return `<div class="skel" style="height:220px;margin-top:6px"></div><div class="skel" style="height:300px"></div>`;
     if (S.err && !S.stations.length) return `<div class="card notice warnbox"><span class="ic">⚠️</span><div><b>${say("Ladestationa gehet grad net", "Ladestationen gerade nicht verfügbar")}</b><br>${esc(S.err)}
       <div class="row" style="margin-top:10px"><button class="btn" data-evreload>${say("Nomol versuche", "Erneut versuchen")}</button></div></div></div>`;
-    const { all, priced, list } = rows(), lv = lvOf(priced);
+    const { all, priced, list, stats } = rows(), lv = lvOf(priced);
     last = { list, lv, priced };
     const cheapest = priced.length ? [...priced].sort((a, b) => a.e - b.e || a.s.dist - b.s.dist)[0] : null;
     const med = median(priced.map((v) => v.e)), save = cheapest && med != null ? (med - cheapest.e) * KWH() : 0;
-    let h = "";
+    let h = Karte.bannerHtml(stats);
     if (S.err) h += `<div class="card notice warnbox"><span class="ic">⚠️</span><div>${esc(S.err)} – es werden die zuletzt geladenen Stationen gezeigt.</div></div>`;
     if (S.tarErr && !priced.length) h += `<div class="card notice"><span class="ic">ℹ️</span><div>${say("D'Preis send grad net z'erreicha – d'Stationa sieht mr trotzdem.", "Die Preise sind gerade nicht erreichbar – die Stationen werden trotzdem gezeigt.")}</div></div>`;
     if (cheapest) {
       const s = cheapest.s;
       h += `<section class="card hero evhero"><span class="eyebrow">${say("Am billigschde lada", "Günstigste Ladestation")} · ${radius > MAX_KM ? MAX_KM : radius} km</span>
-        <div class="pricerow"><div class="price">${eur2s(cheapest.e)}<span class="cur">€/kWh</span></div>
+        <div class="pricerow"><div class="price">${eur2s(cheapest.e)}<span class="cur">€/kWh${cheapest.src === "card" ? " 💳" : ""}</span></div>
           ${priced.length > 1 && save > 0.005 ? `<div class="save"><span class="eyebrow">${say("Gspart", "Ersparnis")}</span><b>${eur2(save)}</b><span>bei ${fmtNum(KWH(), 0)} kWh ggü. Ø</span></div>` : ""}</div>
         <div class="station">${badge(s, lv(cheapest), "lg")}<div style="min-width:0"><div class="where">${esc(s.brand)} · ${esc(s.place)}</div>
           <div class="sub">${esc(s.street)} · ${km(s.dist)} · ${power(cheapest)}</div></div></div>
+        ${cheapest.src === "card" ? `<p class="quip">💳 Mit deiner Karte „${esc(cheapest.card.name)}“ – Eigeneingabe, bestätigt ${esc(Karte.ago(cheapest.card))}${cheapest.d != null ? ` · Direktzahlung hier: ${Karte.f2(cheapest.d)} €/kWh` : " · kein Direktpreis gemeldet"}</p>` : ""}
         <div class="row" style="margin-top:8px">${avail(cheapest)}${priced.length > 1 && save > 0.005 ? pill(-(med - cheapest.e), `${ct(cheapest.e - med)} unter Ø`) : ""}</div>
         ${cheapest.flat > 0 || cheapest.tp > 0 ? `<p class="quip">${esc(tariffText(cheapest))}</p>` : ""}
         <div class="row two"><a class="btn" href="${esc(gmaps(s))}" target="_blank" rel="noopener">${NAV} Route</a>
           <button class="btn secondary" data-evst="${esc(s.id)}" data-evgo>Details</button></div></section>`;
     } else if (all.length) h += `<div class="card empty"><div class="bigic">💶</div><b>${say("Koi Preis gmeldet", "Keine Preise gemeldet")}</b><p>${say("Für dui Gegend meldet koi Betreiber Preis. D'Stationa sieht mr trotzdem.", "Für diese Gegend meldet kein Betreiber Preise. Die Stationen stehen unten.")}</p></div>`;
     else h += `<div class="card empty"><div class="bigic">🔌</div><b>${say("Koi Ladestation", "Keine Ladestation")}</b><p>${say(`Im Umkreis vo ${Math.min(radius, MAX_KM)} km hot's koine – Radius größer macha.`, `Im Umkreis von ${Math.min(radius, MAX_KM)} km gibt es keine passende Ladestation – Radius vergrößern oder Filter lockern.`)}</p></div>`;
+    h += favHtml(lv);
     h += `<div class="sec"><h2>${say("Ladestationa", "Ladestationen")}</h2>
       <div class="seg mini"><button data-evview="list" class="${S.view === "list" ? "on" : ""}">Liste</button><button data-evview="map" class="${S.view === "map" ? "on" : ""}">Karte</button></div></div>
       <div class="chips evchips"><span class="lbl">${say("Leistung", "Leistung")}</span>${KWS.map((k) => `<button class="chip ${k === S.minKw ? "on" : ""}" data-evkw="${k}" aria-pressed="${k === S.minKw}">${k ? "≥ " + k + " kW" : "Alle"}</button>`).join("")}</div>
+      ${basisHtml()}
       <div class="chips">${S.view === "list" ? `<button class="chip ${S.sort === "price" ? "on" : ""}" data-evsort="price">Nach Preis</button>
         <button class="chip ${S.sort === "dist" ? "on" : ""}" data-evsort="dist">Nach Entfernung</button>
         <button class="chip ${S.sort === "power" ? "on" : ""}" data-evsort="power">Nach Leistung</button>` : ""}
@@ -287,9 +368,18 @@ const Strom = (() => {
       if (!list.length) h += `<div class="empty">${say("Nix gfunda – Filter lockera.", "Nichts gefunden – Filter lockern.")}</div>`;
       h += `</div>`;
     }
-    h += `<p class="small" style="margin:12px 4px 0">${NOTE}</p>`;
+    h += `<p class="small" style="margin:12px 4px 0">${NOTE}</p>${foreignNote(S.stations)}`;
     if (S.cut || radius > MAX_KM) h += `<p class="small" style="margin:6px 4px 0">${radius > MAX_KM ? `Für Ladestationen gilt höchstens ${MAX_KM} km Umkreis. ` : ""}${S.cut ? "Sehr viele Stationen – es werden die nächsten gezeigt." : ""}</p>`;
     return h + FOOT();
+  }
+  function favHtml(lv) {
+    if (!favs.length) return "";
+    const rowsH = favs.map((f, i) => {
+      const s = favStation(f), v = s ? stationView(s, 0) : null;
+      return v ? itemHtml(v, lv, null, km(s.dist), null, "evf-")
+        : `<div class="rtitem"><div class="item closed"><div class="info"><div class="name"><span>${esc(f.brand)}</span></div><div class="addr">${esc(f.place)} · ${S.favSt.has(`${f.lat},${f.lng}`) ? "nicht mehr gefunden" : "lädt …"}</div></div><button class="iconx" data-evfavdel="${i}" aria-label="Favorit entfernen">×</button></div></div>`;
+    }).join("");
+    return `<div class="sec"><h2>★ ${say("Meine Ladestationa", "Meine Ladestationen")}</h2></div><div class="list rtlist">${rowsH}</div>`;
   }
   function paint() {
     const el = $("#evBody");
@@ -344,14 +434,20 @@ const Strom = (() => {
     }
   }
 
+  // Station zu einer Kennung: Umkreisliste, Favoriten oder Route
+  const byId = (id) => S.stations.find((s) => s.id === id) || favs.map(favStation).find((s) => s?.id === id) || RT.rows.find((r) => r.s.id === id)?.s || null;
+
   // ---- Bedienung
   document.addEventListener("click", (e) => {
-    const el = e.target.closest("[data-evst],[data-evview],[data-evkw],[data-evsort],[data-evbusy],[data-evall],[data-evmap],[data-evreload],[data-evrsort]");
+    const el = e.target.closest("[data-evst],[data-evview],[data-evkw],[data-evsort],[data-evbusy],[data-evall],[data-evmap],[data-evreload],[data-evrsort],[data-evbasis],[data-evfav],[data-evfavdel]");
     if (!el) return;
     if (el.closest("#rtBody")) return routeClick(el);
     if (!el.closest("#evBody")) return;
     const d = el.dataset;
-    if (d.evmap) { const v = last.list.find((x) => x.s.id === d.evmap); if (!v) return; S.focus = v.s; S.view = "map"; store.set("evView", "map"); return paint(); }
+    if (d.evfav) { const s = byId(d.evfav); if (s) { toggleFav(s); paint(); } return; }
+    if (d.evfavdel != null) { favs.splice(+d.evfavdel, 1); saveFavs(); return paint(); }
+    if (d.evbasis) { S.basis = d.evbasis; store.set("evBasis", d.evbasis); return paint(); }
+    if (d.evmap) { const s = byId(d.evmap); if (!s) return; S.focus = s; S.view = "map"; store.set("evView", "map"); return paint(); }
     if (d.evst) { S.open = S.open === d.evst && !el.hasAttribute("data-evgo") ? null : d.evst; S.all = S.all || last.list.findIndex((x) => x.s.id === d.evst) >= 12; paint(); if (el.hasAttribute("data-evgo")) document.getElementById("ev-" + d.evst)?.scrollIntoView({ block: "center", behavior: "smooth" }); return; }
     if (d.evview) { S.view = d.evview; store.set("evView", d.evview); return paint(); }
     if (d.evkw != null) { S.minKw = +d.evkw; store.set("evKw", String(S.minKw)); return paint(); }
@@ -423,7 +519,7 @@ const Strom = (() => {
   const whereTxt = (r) => `${km(r.along)} · ≈ ${dur(Math.max(1, Math.round(r.min)))} · ${detTxt(r)}`;
   function routeHtml(R, ctx) {
     RT.ctx = ctx;
-    const rows = alongRows(R, ctx.corr), priced = rows.filter((r) => r.e != null), lv = lvOf(priced);
+    const rows = alongRows(R, ctx.corr), priced = rows.filter((r) => r.e != null), lv = lvOf(priced), stats = cardStats(rows);
     let list = rows;
     if (RT.sort === "price") list = [...priced].sort((a, b) => a.e - b.e || a.along - b.along).concat(rows.filter((r) => r.e == null));
     else if (RT.sort === "power") list = [...rows].sort((a, b) => b.kw - a.kw || a.along - b.along);
@@ -431,16 +527,17 @@ const Strom = (() => {
     RT.rows = rows; RT.lv = lv;
     const cheapest = priced.length ? [...priced].sort((a, b) => a.e - b.e || a.along - b.along)[0] : null;
     const med = median(priced.map((r) => r.e)), save = cheapest && med != null ? (med - cheapest.e) * KWH() : 0;
-    let h = "";
+    let h = Karte.bannerHtml(stats);
     if (RT.busy && RT.prog) h += `<div class="card notice"><span class="ic"><span class="spin-dot"></span></span><div>${say("Ladestationa am Weg werret gläda", "Ladestationen an der Strecke werden geladen")} … ${RT.prog.done} / ${RT.prog.total}</div></div>`;
     else if (RT.err) h += `<div class="card notice warnbox"><span class="ic">⚠️</span><div>${esc(RT.err)}${rows.length ? " – es werden die bisher geladenen Stationen gezeigt." : ""}<div class="row" style="margin-top:10px"><button class="btn secondary" data-evreload>${say("Nomol versuche", "Erneut versuchen")}</button></div></div></div>`;
     if (cheapest) {
       const s = cheapest.s;
       h += `<section class="card hero rthero evhero"><span class="eyebrow">${say("Am billigschde lada uff dr Strecke", "Günstigster Ladestopp an der Strecke")}</span>
-        <div class="pricerow"><div class="price">${eur2s(cheapest.e)}<span class="cur">€/kWh</span></div>
+        <div class="pricerow"><div class="price">${eur2s(cheapest.e)}<span class="cur">€/kWh${cheapest.src === "card" ? " 💳" : ""}</span></div>
           ${priced.length > 1 && save > 0.005 ? `<div class="save"><span class="eyebrow">${say("Gspart", "Ersparnis")}</span><b>${eur2(save)}</b><span>bei ${fmtNum(KWH(), 0)} kWh ggü. Ø</span></div>` : ""}</div>
         <div class="station">${badge(s, lv(cheapest), "lg")}<div style="min-width:0"><div class="where">${esc(s.brand)} · ${esc(s.place)}</div>
           <div class="sub">${whereTxt(cheapest)} · ${power(cheapest)}</div></div></div>
+        ${cheapest.src === "card" ? `<p class="quip">💳 Mit deiner Karte „${esc(cheapest.card.name)}“ – Eigeneingabe, bestätigt ${esc(Karte.ago(cheapest.card))}${cheapest.d != null ? ` · Direktzahlung hier: ${Karte.f2(cheapest.d)} €/kWh` : " · kein Direktpreis gemeldet"}</p>` : ""}
         <div class="row" style="margin-top:8px">${avail(cheapest)}</div>
         ${cheapest.flat > 0 || cheapest.tp > 0 ? `<p class="quip">${esc(tariffText(cheapest))}</p>` : ""}
         <div class="row two"><a class="btn" href="${esc(ctx.gmaps(s))}" target="_blank" rel="noopener">${NAV} Ladestopp</a>
@@ -450,6 +547,7 @@ const Strom = (() => {
     h += `<div class="card mapcard rtmapcard" id="rtmapslot"></div>`;
     h += `<div class="sec"><h2>${say("Ladestationa am Weg", "Ladestationen an der Strecke")}</h2><span class="sub">± ${ctx.corr} km</span></div>
       <div class="chips evchips"><span class="lbl">Leistung</span>${KWS.map((k) => `<button class="chip ${k === S.minKw ? "on" : ""}" data-evkw="${k}" aria-pressed="${k === S.minKw}">${k ? "≥ " + k + " kW" : "Alle"}</button>`).join("")}</div>
+      ${basisHtml()}
       <div class="chips"><button class="chip ${RT.sort === "route" ? "on" : ""}" data-evrsort="route">Nach Strecke</button>
         <button class="chip ${RT.sort === "price" ? "on" : ""}" data-evrsort="price">Nach Preis</button>
         <button class="chip ${RT.sort === "power" ? "on" : ""}" data-evrsort="power">Nach Leistung</button>
@@ -458,13 +556,15 @@ const Strom = (() => {
     h += `<div class="list rtlist">` + list.slice(0, n).map((r) => itemHtml(r, lv, cheapest?.e ?? null, whereTxt(r), ctx)).join("");
     if (list.length > 12) h += `<button class="morebtn" data-evall>${RT.all ? say("Weniger aazeige", "Weniger anzeigen") : say(`Älle ${list.length} aazeige`, `Alle ${list.length} anzeigen`)}</button>`;
     if (!list.length && !RT.busy) h += `<div class="empty">${say("Nix gfunda – Filter lockera.", "Nichts gefunden – Filter lockern.")}</div>`;
-    h += `</div><p class="small" style="margin:12px 4px 0">${NOTE}</p>`;
+    h += `</div><p class="small" style="margin:12px 4px 0">${NOTE}</p>${foreignNote(rows.map((r) => r.s))}`;
     return h;
   }
   function routeClick(el) {
     const d = el.dataset, ctx = RT.ctx;
     if (!ctx) return;
     if (d.evmap) { const r = RT.rows.find((x) => x.s.id === d.evmap); if (r) ctx.focus(r.s); return; }
+    if (d.evfav) { const s = byId(d.evfav); if (s) { toggleFav(s); ctx.paint(); } return; }
+    if (d.evbasis) { S.basis = d.evbasis; store.set("evBasis", d.evbasis); return ctx.paint(); }
     if (d.evst) { RT.open = RT.open === d.evst ? null : d.evst; RT.all = RT.all || RT.rows.findIndex((x) => x.s.id === d.evst) >= 12; return ctx.paint(); }
     if (d.evkw != null) { S.minKw = +d.evkw; store.set("evKw", String(S.minKw)); return ctx.paint(); }
     if (d.evrsort) { RT.sort = d.evrsort; store.set("evRSort", d.evrsort); return ctx.paint(); }
@@ -493,5 +593,5 @@ const Strom = (() => {
   }
   const resetRoute = () => { Object.assign(S, { stations: [], key: "", at: 0, open: null }); RT.map.clear(); RT.centers.clear(); RT.memo = null; RT.route = null; RT.rows = []; RT.open = null; seq++; };
   const ATTR = `Ladedaten: <a href="https://mobidata-bw.de/dataset/e-ladesaulen" target="_blank" rel="noopener">MobiData BW (OCPDB)</a> · Standorte: Bundesnetzagentur (CC BY 4.0) · Preise und Belegung: Betreiber über <a href="https://mobilithek.info" target="_blank" rel="noopener">Mobilithek</a>`;
-  return { render, load, invalidate, fetchArea, fetchRaw, norm, dedupe, loadTariffs, tariffOf, S, RT, gross, condense, loadAlong, routeHtml, drawRouteMarkers, resetRoute, ATTR, KEEP, MAX_KM };
+  return { render, load, invalidate, rows: () => rows(), fetchArea, fetchRaw, norm, dedupe, loadTariffs, tariffOf, S, RT, gross, condense, loadAlong, routeHtml, drawRouteMarkers, resetRoute, ATTR, KEEP, MAX_KM };
 })();

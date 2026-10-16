@@ -440,3 +440,16 @@ label.check input{width:20px;height:20px;padding:0;flex:none;accent-color:var(--
 .evgrp .evk{display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline}.evgrp .evk span{font-size:13px;color:var(--muted)}
 .evgrp .evt{grid-column:1;font-size:13.5px;font-variant-numeric:tabular-nums}.evgrp .evs{grid-column:2;grid-row:1 / span 2;align-self:center;text-align:right}
 .evt{color:var(--fg)}
+
+/* Meine Ladekarte */
+.cardrules{background:var(--card);border-radius:12px;padding:10px 12px;margin:10px 0}
+.cardrow{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;background:var(--card);border-radius:14px;padding:12px;margin-top:10px}
+.cardrow.off{opacity:.65}.cardrow .cr-t{min-width:0;flex:1}.cardrow .cr-a{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;align-items:center;max-width:46%}
+.cardrow .cr-a .btn{padding:7px 10px;font-size:13px}
+.iconx{width:34px;height:34px;border-radius:17px;background:var(--seg);color:var(--muted);font-size:20px;line-height:1;flex:none}
+.cardform{background:var(--card);border-radius:14px;padding:12px;margin-top:10px}
+.cardform .two-in{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.cardform input{width:100%}
+.cardmsg{font-size:13.5px;margin:8px 0;min-height:0}.cardmsg.bad{color:var(--hi)}
+.evgrp .evc{grid-column:1 / -1;font-size:13.5px;color:var(--fg);border-top:1px dashed var(--line);padding-top:5px;margin-top:3px}
+.evgrp .evc.bad{color:var(--hi)}
+@media (max-width:380px){.cardrow{flex-direction:column}.cardrow .cr-a{max-width:100%;justify-content:flex-start}.cardform .two-in{grid-template-columns:1fr}}
