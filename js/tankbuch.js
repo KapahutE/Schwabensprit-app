@@ -393,6 +393,7 @@ $("#tbImport").addEventListener("change", async (ev) => {
   } catch { toast(`Das ist keine gültige ${TB_NAME()}-Sicherung.`, 5000); }
 });
 $("#tbFile").addEventListener("change", (ev) => { const f = ev.target.files[0]; ev.target.value = ""; if (f) openTbForm(null, f); });
+$("#tbForm").addEventListener("submit", (e) => e.preventDefault());   // Eingabetaste schließt das Formular nicht
 $("#btnTbSave").addEventListener("click", saveTb);
 $("#btnTbCancel").addEventListener("click", () => $("#dlgTb").close());
 $("#btnTbDel").addEventListener("click", async () => {

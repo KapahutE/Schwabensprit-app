@@ -1,0 +1,27 @@
+# Tests bei jedem Push und jeder Änderungsanfrage: Unit-Tests (ohne Browser) und Browser-Tests (Chromium, feste Testdaten).
+name: Tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Playwright installieren
+        working-directory: tests
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Unit-Tests
+        run: node tests/unit.js
+      - name: Browser-Tests
+        run: node tests/e2e.js

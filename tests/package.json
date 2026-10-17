@@ -1,0 +1,7 @@
+{
+  "name": "schwabensprit-tests",
+  "private": true,
+  "description": "Tests der App: Unit-Tests ohne Browser und Browser-Tests (Playwright) mit festen Testdaten",
+  "scripts": { "unit": "node unit.js", "e2e": "node e2e.js", "test": "node unit.js && node e2e.js" },
+  "devDependencies": { "playwright": "1.56.1" }
+}

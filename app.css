@@ -32,7 +32,7 @@ button{font:inherit;border:0;cursor:pointer;color:inherit;background:none}
 .brand{display:flex;align-items:center;gap:10px;min-width:0}
 .logo{width:36px;height:36px;flex:none;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.18)}
 .wordmark{font-size:27px;font-weight:800;letter-spacing:-.035em;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.iconbtn{background:var(--card);color:var(--acc-ink);width:40px;height:40px;border-radius:20px;display:grid;place-items:center;flex:none;box-shadow:var(--shadow)}
+.iconbtn{background:var(--card);color:var(--acc-ink);width:44px;height:44px;border-radius:22px;display:grid;place-items:center;flex:none;box-shadow:var(--shadow)}
 .iconbtn svg{width:21px;height:21px}
 .locrow{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;margin:12px 0 0}
 .locbtn{display:inline-flex;align-items:center;gap:7px;background:var(--card);color:var(--fg);font-size:15px;font-weight:650;
@@ -453,3 +453,11 @@ label.check input{width:20px;height:20px;padding:0;flex:none;accent-color:var(--
 .evgrp .evc{grid-column:1 / -1;font-size:13.5px;color:var(--fg);border-top:1px dashed var(--line);padding-top:5px;margin-top:3px}
 .evgrp .evc.bad{color:var(--hi)}
 @media (max-width:380px){.cardrow{flex-direction:column}.cardrow .cr-a{max-width:100%;justify-content:flex-start}.cardform .two-in{grid-template-columns:1fr}}
+
+#updBar{position:fixed;left:16px;right:16px;top:calc(env(safe-area-inset-top) + 8px);z-index:90;padding:12px 14px;border-radius:14px;background:var(--acc);color:var(--on-acc);font-weight:700;font-size:15px;box-shadow:0 6px 24px rgba(0,0,0,.3)}
+
+/* Tank-Rat */
+.tankrat{margin:12px 0 0;padding-top:12px;border-top:1px solid var(--line)}.tankrat .chips{align-items:center}.tankrat .lbl{font-size:13px;color:var(--muted);margin-right:2px;white-space:nowrap}
+/* Tippflächen ≥ 44 px: die Fläche wird unsichtbar vergrößert, das Layout bleibt */
+.chip,.seg button,.iconx,.favedit button,.rtsvx,.rtswap{position:relative}
+.chip::after,.seg button::after,.iconx::after,.favedit button::after,.rtsvx::after{content:"";position:absolute;left:0;right:0;top:-6px;bottom:-6px}

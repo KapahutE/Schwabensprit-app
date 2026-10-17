@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="data-repo" content="KapahutE/tankpreise">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- Content-Security-Policy: nur die Dienste, die die App braucht (Adressen in endpoints.json müssen hier stehen). Skripte nur aus der App und unpkg (Karte, mit Prüfsumme). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://unpkg.com 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://www.google.com https://*.gstatic.com https://tile.openstreetmap.org https://unpkg.com; connect-src 'self' https://api.github.com https://api.mobidata-bw.de https://routing.openstreetmap.de https://valhalla1.openstreetmap.de https://nominatim.openstreetmap.org https://api.e-control.at https://creativecommons.tankerkoenig.de; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -14,7 +16,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
 <title>Schwabensprit</title>
-<link rel="stylesheet" href="app.css?v=3d50acd5">
+<link rel="stylesheet" href="app.css?v=58722d38">
 </head>
 <body>
 <div id="ptr"><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></div></div>
@@ -76,7 +78,7 @@
 <input type="file" id="tbFile" accept="image/*" hidden>
 <input type="file" id="tbImport" accept="application/json,.json" hidden>
 <dialog id="dlgTb">
-  <form method="dialog" class="inner" onsubmit="return false">
+  <form method="dialog" class="inner" id="tbForm">
     <h3 id="tbTitle">Tankung erfassen</h3>
     <img id="tbImg" alt="Tankbeleg" hidden>
     <div id="tbOcr"></div>
@@ -188,6 +190,7 @@
       <div><label for="inTank">Tankmenge (Liter)</label><input id="inTank" type="text" inputmode="decimal" placeholder="50"></div>
       <div><label for="inCons">Verbrauch (l/100 km)</label><input id="inCons" type="text" inputmode="decimal" placeholder="7"></div>
       <div><label for="inKwh">Ladung E-Modus (kWh)</label><input id="inKwh" type="text" inputmode="decimal" placeholder="30"></div>
+      <div><label for="inEvCons">E-Auto (kWh/100 km)</label><input id="inEvCons" type="text" inputmode="decimal" placeholder="18"></div>
     </div>
     <label>Ladekarte <span class="small">(E-Modus: eigene Preise für Karte/App – werden regelmäßig abgefragt)</span></label>
     <button class="btn secondary block" id="btnCards" type="button">💳 Meine Ladekarte · <span id="cardStat"></span></button>
@@ -195,7 +198,7 @@
     <label class="check"><input id="inWitz" type="checkbox"> <span>Witz vom Dag <span class="small">(Hannes &amp; Lena auf der Startseite)</span></span></label>
     <label class="check"><input id="inRtKeep" type="checkbox"> <span>Letzte Route merken <span class="small">(nur auf diesem Gerät, nie bei Start „Mein Standort“)</span></span></label>
     <details class="tbl privacy"><summary>Datenschutz</summary>
-      <p class="small">Die App hat keinen eigenen Server und kein Tracking. Einstellungen, Favoriten, Ladekarten-Preise (Eigeneingabe), Spritbüchle, gemerkte Strecken und zuletzt gesuchte Orte liegen nur auf diesem Gerät. Der Standort wird nur mit deiner iPhone-Freigabe und nur bei „Mein Standort“ abgefragt und höchstens auf ca. 100 m gerundet gespeichert.</p>
+      <p class="small">Die App hat keinen eigenen Server und kein Tracking. Einstellungen, Favoriten, Ladekarten-Preise (Eigeneingabe), Spritbüchle, gemerkte Strecken und zuletzt gesuchte Orte liegen nur auf diesem Gerät, ebenso der zuletzt geladene Stand der Preise und Ladestationen (Zwischenspeicher für schnellen Start und Betrieb ohne Netz). Der Standort wird nur mit deiner iPhone-Freigabe und nur bei „Mein Standort“ abgefragt und höchstens auf ca. 100 m gerundet gespeichert.</p>
       <p class="small">Folgende Dienste bekommen beim Benutzen Daten (immer auch deine IP-Adresse):</p>
       <ul class="small">
         <li><b>GitHub</b> – Abruf der Preisdaten (kein Standort).</li>
@@ -226,15 +229,15 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="js/grund.js?v=3d50acd5"></script>
-<script src="js/witz.js?v=3d50acd5"></script>
-<script src="js/preise.js?v=3d50acd5"></script>
-<script src="js/verlauf.js?v=3d50acd5"></script>
-<script src="js/belegleser.js?v=3d50acd5"></script>
-<script src="js/routegeo.js?v=3d50acd5"></script>
-<script src="js/route.js?v=3d50acd5"></script>
-<script src="js/ladekarte.js?v=3d50acd5"></script>
-<script src="js/strom.js?v=3d50acd5"></script>
-<script src="js/tankbuch.js?v=3d50acd5"></script>
+<script src="js/grund.js?v=58722d38"></script>
+<script src="js/witz.js?v=58722d38"></script>
+<script src="js/preise.js?v=58722d38"></script>
+<script src="js/verlauf.js?v=58722d38"></script>
+<script src="js/belegleser.js?v=58722d38"></script>
+<script src="js/routegeo.js?v=58722d38"></script>
+<script src="js/route.js?v=58722d38"></script>
+<script src="js/ladekarte.js?v=58722d38"></script>
+<script src="js/strom.js?v=58722d38"></script>
+<script src="js/tankbuch.js?v=58722d38"></script>
 </body>
 </html>

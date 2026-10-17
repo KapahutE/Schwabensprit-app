@@ -20,6 +20,17 @@ Leiste unten mit drei Bereichen:
 - **📈 Verlauf** – letzte 7 Tage, Preis nach Uhrzeit, Preisänderungen, Rangliste, Wochenreports
 - **📒 Spritbüchle** (Hochdeutsch: Tankbuch) – Belege scannen, Tankungen, Statistik, Export (nur auf dem Gerät)
 
+## Schnell und ohne Netz
+
+- **Service Worker** (`sw.js`): App-Dateien kommen aus dem Speicher (je Version unveränderlich, `?v=`-Hash), die Startseite sofort aus dem Speicher und wird im Hintergrund geprüft; gibt es eine neue Version, erscheint „Neue Version bereit – tippen zum Neuladen“. Der Belegleser (`ocr/`, 13 MB) wird bei erster Nutzung gespeichert. Preisdaten laufen nie über den Worker.
+- **Zwischenspeicher der Daten** (IndexedDB `schwabensprit-cache`, nur auf dem Gerät): zuletzt geladene Preise der Basis und Ladestationen des letzten Orts. Beim Start erscheint sofort dieser Stand („Gespeichert · Stand …“), danach kommen die frischen Daten; ohne Netz bleibt er stehen. „Ortsdaten löschen“ leert ihn.
+- **Content-Security-Policy** (Meta-Tag in `index.html`): Skripte nur aus der App und unpkg (Karte, mit Prüfsumme), Verbindungen nur zu den benötigten Diensten, keine Inline-Skripte. Wer in `endpoints.json` einen anderen Dienst einträgt, muss dessen Adresse auch in der Richtlinie ergänzen. Der Belegleser braucht `wasm-unsafe-eval` (iOS ab 16.4).
+- **Tank-Rat** (Preise, in „Wann tanken?“): Füllstand angeben (fast leer, ¼, ½, ¾, gilt 3 Tage) → Reichweite, „jetzt tanken“ oder „warten spart ≈ …“ aus Prognose und 12-Uhr-Regel. **Kosten je 100 km** im E-Modus: Ladepreis × Verbrauch (⚙ „E-Auto kWh/100 km“), dazu der Sprit-Vergleich.
+
+## Tests
+
+`node tests/unit.js` (ohne Browser: Streckengeometrie, Belegleser, Spritbüchle-Verbrauch, Ladekarte, E-Modus-Logik) und `node tests/e2e.js` (Chromium mit Playwright, feste Testdaten in `tests/fixtures/`, nachgestellte Dienste; Abläufe in Preise, E-Modus, Ladekarte, Route, Spritbüchle, Belegleser, CSP, Tippflächen, Offline-Start). Vorbereitung: `cd tests && npm install && npx playwright install chromium`. Bei jedem Push laufen beide in GitHub Actions (`.github/workflows/tests.yml`).
+
 ## Dateien
 
 | Datei | Inhalt |
@@ -31,6 +42,8 @@ Leiste unten mit drei Bereichen:
 | `js/strom.js` | E-Modus: Ladestationen und Ladepreise (MobiData BW OCPDB), Ansicht für Preise und Route |
 | `js/route.js` | Bereich Route: Routing (FOSSGIS OSRM, Ausweich Valhalla), Tankstellen am Weg, Preise Österreich (E-Control), Grenzvergleich, Karte, Übergabe an Karten-Apps |
 | `js/routegeo.js` | Geometrie: Polyline, Abstand zur Strecke, Kilometer ab Start, Umweg, Abfragepunkte |
+| `sw.js` | Service Worker: Sofortstart und Betrieb ohne Netz |
+| `tests/` | Unit-Tests, Browser-Tests und Testdaten |
 | `endpoints.json` | Adressen von Routing-, Such- und E-Control-Dienst (austauschbar ohne Code-Änderung) |
 | `js/witz.js` | „Witz vom Dag“: Hannes & Lena (eigene Figuren), Dialog Zeile für Zeile, abschaltbar unter ⚙ |
 | `js/preise.js` | Bereich Preise, „Wann tanka?“, Karte, Detailansicht |

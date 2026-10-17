@@ -84,9 +84,35 @@ const repo = () => store.get("repo", "") || defaultRepo();
 const token = () => store.get("token", "");
 let dataRef = "app-daten";
 if (store.get("dataMode", "") === "api") dataMode = "api";   // gemerkt: beim Start nicht erst neben der App suchen
+// ---- Zwischenspeicher auf dem Gerät (IndexedDB, getrennt vom Spritbüchle): letzter Preisstand und letzte Ladestationen –
+// für den Sofortstart und, wenn kein Netz da ist. Enthält keine Zugangsdaten und keine Standortverläufe.
+const kv = (() => {
+  let p = null;
+  const open = () => p ||= new Promise((res, rej) => {
+    const r = indexedDB.open("schwabensprit-cache", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("kv");
+    r.onsuccess = () => { const db = r.result; db.onclose = db.onversionchange = () => { p = null; try { db.close(); } catch {} }; res(db); };
+    r.onerror = () => { p = null; rej(r.error); };
+  });
+  const run = async (mode, fn) => { const db = await open(); return new Promise((res, rej) => { const t = db.transaction("kv", mode), req = fn(t.objectStore("kv")); t.oncomplete = () => res(req?.result); t.onerror = t.onabort = () => rej(t.error); }); };
+  return { get: (k) => run("readonly", (s) => s.get(k)).catch(() => undefined), set: (k, v) => run("readwrite", (s) => s.put(v, k)).catch(() => {}), clear: () => run("readwrite", (s) => s.clear()).catch(() => {}) };
+})();
+const CACHE_PATHS = /^data\/(bases\.json|[^/]+\/(latest|forecast|history|changes)\.json)$/;
+let cachedAt = 0;   // ≠ 0: die gerade geladenen Preise stammen aus dem Zwischenspeicher (kein Netz) – Zeitpunkt der Speicherung
 async function fetchData(path, asText = false) {
+  try {
+    const d = await fetchDataNet(path, asText);
+    if (!asText && CACHE_PATHS.test(path)) kv.set("d:" + path, { at: Date.now(), d });
+    return d;
+  } catch (e) {
+    // kein Netz / Dienst gestört: zuletzt gespeicherten Stand nehmen (nicht bei „Schlüssel ungültig“)
+    if (!e.setup && !asText && CACHE_PATHS.test(path)) { const c = await kv.get("d:" + path); if (c?.d) { cachedAt = cachedAt ? Math.min(cachedAt, c.at) : c.at; return c.d; } }
+    throw e;
+  }
+}
+async function fetchDataNet(path, asText = false) {
   if (dataMode !== "api") {
-    const r = await fetch(`${path}?t=${Date.now()}`, { cache: "no-store" });
+    const r = await fetchT(`${path}?t=${Date.now()}`, 15000, { cache: "no-store" });
     if (r.ok) return asText ? r.text() : r.json();
     if (dataMode === "web" || r.status !== 404) throw new Error(r.status);
   }
@@ -95,7 +121,7 @@ async function fetchData(path, asText = false) {
   let r;
   for (const ref of [...new Set([dataRef, "app-daten", "main"])]) {
     // ohne Zeitstempel in der Adresse: „no-store“ verhindert alte Daten, und die Vorab-Prüfung (CORS) bleibt zwischengespeichert
-    r = await fetch(`https://api.github.com/repos/${repo()}/contents/docs/${path}?ref=${ref}`, {
+    r = await fetchT(`https://api.github.com/repos/${repo()}/contents/docs/${path}?ref=${ref}`, 20000, {
       headers: { Authorization: `Bearer ${token()}`, Accept: "application/vnd.github.raw+json" }, cache: "no-store",
     });
     if (r.ok) { if (path === "data/bases.json") dataRef = ref; break; }
@@ -229,8 +255,41 @@ function parseDays(text) {
 // Lädt alles für den aktuellen Ort und baut die Ansicht
 // liveForce: Live-Preise trotz 5-Minuten-Zwischenspeicher neu holen (nur bei ausdrücklichem Aktualisieren)
 let loadSeq = 0, loadAt = 0;
+// Ansicht aus Standort, Quelle und Daten bauen (für den Sofortstart und die normale Ladung)
+function buildView(c, src, data, reports) {
+  const stations = data.stations
+    .map((s) => ({ ...s, dist: s.lat != null ? distKm(c.lat, c.lng, s.lat, s.lng) : null }))
+    .filter((s) => s.dist == null || s.dist <= radius + 0.05);
+  return { center: c, src, base: src.base, live: src.type === "live", updated: data.updated, stations, reports, deferred: !!data.deferred };
+}
+// Sofortstart: noch bevor das Netz antwortet, den zuletzt gespeicherten Stand zeigen (nur Basis-Daten; Live-Preise nie aus dem Speicher)
+async function instantView(seq) {
+  if (view || seq !== loadSeq || tab === "tankbuch" || (evMode && (tab === "preise" || tab === "verlauf"))) return;
+  const cb = await kv.get("d:data/bases.json");
+  if (!cb?.d?.length || view || seq !== loadSeq) return;
+  const had = bases;
+  bases = bases.length ? bases : cb.d;
+  const c = center();
+  if (!c) { bases = had; return; }
+  const src = pickSource(c);
+  if (src.type !== "base") { bases = had; return; }
+  const cl = await kv.get(`d:data/${src.base.id}/latest.json`);
+  if (!cl?.d?.stations || view || seq !== loadSeq) { bases = had; return; }
+  const id = src.base.id;
+  baseCache[id] ||= { latest: cl.d, reports: [], history: null, changes: null, forecast: null };
+  view = { ...buildView(c, src, cl.d, []), cachedAt: cl.at };
+  render();
+  // „Wann tanken?“, Verlauf und Prognose ebenfalls sofort – nur wenn sie zum gespeicherten Preisstand gehören
+  const [h, ch, fc] = await Promise.all(["history", "changes", "forecast"].map((n) => kv.get(`d:data/${id}/${n}.json`)));
+  const bc = baseCache[id];
+  if (h?.d && h.d.updated === cl.d.updated && bc && !bc.history && view?.cachedAt) {
+    Object.assign(bc, { history: h.d, changes: ch?.d ?? null, forecast: fc?.d ?? null });
+    renderAnalysis();
+  }
+}
 async function load(force = false, liveForce = force) {
-  const seq = ++loadSeq; loadAt = Date.now();
+  const seq = ++loadSeq; loadAt = Date.now(); cachedAt = 0;
+  if (!view) instantView(seq);
   if (evMode && force) Strom.invalidate();   // überholte Ladungen (z. B. langsamer Standort) dürfen nichts mehr ändern
   if (force) healthAt = 0;
   if (view && !view.error) $("#main").classList.add("busy");
@@ -268,10 +327,8 @@ async function load(force = false, liveForce = force) {
       ({ latest: data, reports } = bc?.latest && src.base.updated && bc.latest.updated === src.base.updated ? bc : await loadBaseData(src.base));
     } else data = { updated: null, stations: [] };
     if (seq !== loadSeq) return;
-    const stations = data.stations
-      .map((s) => ({ ...s, dist: s.lat != null ? distKm(c.lat, c.lng, s.lat, s.lng) : null }))
-      .filter((s) => s.dist == null || s.dist <= radius + 0.05);
-    view = { center: c, src, base: src.base, live: src.type === "live", updated: data.updated, stations, reports, deferred: !!data.deferred };
+    view = buildView(c, src, data, reports);
+    if (cachedAt && src.type === "base") { view.cachedAt = cachedAt; toast(say("Koi Netz – i zeig dr letschde gspeicherte Stand.", "Kein Netz – gezeigt wird der zuletzt gespeicherte Stand."), 4500); }
   } catch (e) {
     if (seq !== loadSeq) return;
     view = { center: c, src, error: e };
@@ -352,7 +409,9 @@ const LOGO_DOMAIN = {
 const logoKey = (b) => String(b || "").trim().toUpperCase();
 const logoUrl = (k) => `https://www.google.com/s2/favicons?domain=${LOGO_DOMAIN[k]}&sz=64`;
 const logos = store.getJ("logos", {});   // Marke -> { ok: 1|0, t: Zeitpunkt }
-const logoInner = (k, t) => `<img src="${logoUrl(k)}" alt="" decoding="async" data-t="${esc(t)}" onerror="this.parentNode.classList.remove('haslogo');this.replaceWith(this.dataset.t)">`;
+const logoInner = (k, t) => `<img src="${logoUrl(k)}" alt="" decoding="async" data-t="${esc(t)}">`;
+// Logo nicht ladbar → Kürzel statt Bild (Fehlerereignisse steigen nicht auf: im Erfassen-Modus abfangen; ohne Inline-Handler wegen der CSP)
+document.addEventListener("error", (e) => { const i = e.target; if (i?.tagName === "IMG" && i.dataset?.t != null) { i.parentNode?.classList.remove("haslogo"); i.replaceWith(i.dataset.t); } }, true);
 function preloadLogos(stations) {
   const todo = new Set(stations.map((s) => logoKey(s.brand)).filter((k) => LOGO_DOMAIN[k]
     && !(logos[k] && (logos[k].ok || Date.now() - logos[k].t < 7 * 864e5))));   // Fehlschläge nach 7 Tagen neu versuchen
@@ -431,7 +490,7 @@ function render() {
   else if (view?.updated) {
     const age = (Date.now() - new Date(view.updated)) / 60000;
     st.className = "stand" + (age < 20 ? " fresh" : age > 35 ? " old" : "");
-    st.innerHTML = `<i></i>${view.live ? "Live · " : ""}Stand ${esc(ago(view.updated))}`;
+    st.innerHTML = `<i></i>${view.live ? "Live · " : ""}${view.cachedAt ? "Gespeichert · " : ""}Stand ${esc(ago(view.updated))}`;
   } else st.innerHTML = "";
   const main = $("#main");
   main.classList.remove("busy");
@@ -893,6 +952,7 @@ function openSettings() {
   $("#inTank").value = fmtNum(TANK(), 0);
   $("#inCons").value = fmtNum(CONS(), 1);
   $("#inKwh").value = fmtNum(parseFloat(String(store.get("kwh", "30")).replace(",", ".")) || 30, 0);
+  $("#inEvCons").value = fmtNum(parseFloat(String(store.get("evcons", "18")).replace(",", ".")) || 18, 0);
   $("#testOut").innerHTML = "";
   $("#dlg").returnValue = "";   // sonst gilt „Wischen/Esc“ nach einem früheren Speichern wieder als Speichern
   $("#dlg").showModal();
@@ -913,12 +973,14 @@ function saveSettings() {
   store.set("tank", $("#inTank").value || "50");
   store.set("cons", $("#inCons").value || "7");
   store.set("kwh", $("#inKwh").value || "30");
+  store.set("evcons", $("#inEvCons").value || "18");
   dataMode = null; bases = []; store.set("dataMode", "");
 }
 // Ortsdaten löschen: gesuchte Orte, gemerkte Strecken, letzte Route, Start/Ziel, Live-Zwischenspeicher, Preise-Ort
 $("#btnGeoClear").addEventListener("click", () => {
-  if (!confirm("Alle gespeicherten Ortsdaten auf diesem Gerät löschen?\n\nZuletzt gesuchte Orte, gemerkte Strecken, letzte Route, Start/Ziel, gesuchter Ort und Live-Zwischenspeicher.")) return;
+  if (!confirm("Alle gespeicherten Ortsdaten auf diesem Gerät löschen?\n\nZuletzt gesuchte Orte, gemerkte Strecken, letzte Route, Start/Ziel, gesuchter Ort, Live-Zwischenspeicher und gespeicherte Ladestationen.")) return;
   for (const k of ["rtRecent", "rtSaved", "rtLast", "rtA", "rtB", "liveCache", "lastPlace"]) { try { localStorage.removeItem(k); } catch {} }
+  kv.clear();   // gespeicherte Ladestationen und Preisdaten (Zwischenspeicher)
   lastPlace = null;
   if (loc.mode !== "base") { loc = { mode: "base", baseId: bases[0]?.id }; store.setJ("loc", loc); }
   Route.reset();
@@ -964,8 +1026,13 @@ $("#seg").addEventListener("click", (e) => {
 });
 
 document.addEventListener("click", (e) => {
-  const el = e.target.closest("[data-tab],[data-showall],[data-route],[data-detail],[data-fuel],[data-sort],[data-open],[data-report],[data-view],[data-fav],[data-favtoggle],#btnFavEdit,#btnBack,#btnSetup");
+  const el = e.target.closest("[data-lvl],[data-tab],[data-showall],[data-route],[data-detail],[data-fuel],[data-sort],[data-open],[data-report],[data-view],[data-fav],[data-favtoggle],#btnFavEdit,#btnBack,#btnSetup");
   if (!el) return;
+  if (el.dataset.lvl) {   // Tank-Rat: Füllstand angeben / wieder abwählen
+    const f = +el.dataset.lvl;
+    if (store.getJ("lvl", null)?.f === f) store.set("lvl", ""); else store.setJ("lvl", { f, at: Date.now() });
+    return renderWhen();
+  }
   if (el.dataset.tab) return setTab(el.dataset.tab);
   if (el.hasAttribute("data-showall")) { showAll = !showAll; return render(); }
   if (el.dataset.fav) return openFav(el.dataset.fav);
@@ -1013,3 +1080,15 @@ window.addEventListener("touchend", async () => {
 document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - loadAt > 60000) load(true, false); });   // Live-Preise nur über den Zwischenspeicher
 // Erst starten, wenn alle Teile geladen sind
 document.addEventListener("DOMContentLoaded", () => load(true));
+
+
+// ---- Service Worker (Sofortstart, Betrieb ohne Netz) und Hinweis auf neue Versionen
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data?.type !== "update" || $("#updBar")) return;
+    const b = Object.assign(document.createElement("button"), { id: "updBar", type: "button", textContent: "Neue Version bereit – tippen zum Neuladen" });
+    b.addEventListener("click", () => location.reload());
+    document.body.append(b);
+  });
+}

@@ -411,6 +411,23 @@ function whenHead(sum, P) {
   const btn = go ? `<div class="row"><button class="btn secondary" data-detail="${esc(go.id)}">${say("Zur Tankstell", "Zur Tankstelle")}: ${esc(go.brand)}</button></div>` : "";
   return { soon, html: `<div class="tiphead"><div class="ic">${ic}</div><div><b>${title}</b><div class="sub">${sub}</div></div></div>${btn}` };
 }
+// ---- Tank-Rat: Füllstand (vom Nutzer angegeben, gilt 3 Tage) + Prognose + 12-Uhr-Regel → was jetzt sinnvoll ist
+const LVLS = [[0.1, "fast leer"], [0.25, "¼"], [0.5, "½"], [0.75, "¾"]];
+const lvlGet = () => { const x = store.getJ("lvl", null); return x && LVLS.some(([f]) => f === x.f) && Date.now() - x.at >= 0 && Date.now() - x.at < 3 * 864e5 ? x : null; };
+function tankrat(P) {
+  const x = lvlGet();
+  const chips = LVLS.map(([f, t]) => `<button class="chip ${x?.f === f ? "on" : ""}" data-lvl="${f}" aria-pressed="${x?.f === f}">${t}</button>`).join("");
+  let txt = "";
+  if (x) {
+    const range = Math.round(x.f * TANK() / CONS() * 100), fill = (1 - x.f) * TANK(), L = fmtNum(fill, 0);
+    const noonUp = noonCtx && new Date().getHours() < 12 && !noonStale() ? noonCtx.info.avgUp : 0;
+    if (range < 100) txt = say(`⚠ Reichweite bloß ≈ ${range} km – etz tanka, net uff en günstigera Preis warta.`, `⚠ Reichweite nur ≈ ${range} km – jetzt tanken, nicht auf einen günstigeren Preis warten.`);
+    else if (P?.ok && P.wait) txt = say(`Reichweite ≈ ${range} km – du kasch warta: geg ${hm(new Date(P.bt))} Uhr ≈ ${eur2(P.gain * fill)} billiger (${L} l).`, `Reichweite ≈ ${range} km – du kannst warten: gegen ${hm(new Date(P.bt))} Uhr ≈ ${eur2(P.gain * fill)} günstiger (${L} l).`);
+    else if (noonUp > 0.002) txt = say(`Reichweite ≈ ${range} km – vor 12 Uhr tanka spart ≈ ${eur2(noonUp * fill)} (${L} l).`, `Reichweite ≈ ${range} km – vor 12 Uhr tanken spart ≈ ${eur2(noonUp * fill)} (${L} l).`);
+    else txt = say(`Reichweite ≈ ${range} km – koi Grund z'warta, du tankscht ≈ ${L} l.`, `Reichweite ≈ ${range} km – kein Grund zu warten, du tankst ≈ ${L} l.`);
+  }
+  return `<div class="tankrat"><div class="chips"><span class="lbl">${say("Dein Tank", "Dein Tank")}</span>${chips}</div>${txt ? `<p class="small" style="margin:6px 0 0">${txt}</p>` : `<p class="small" style="margin:6px 0 0">${say("Wie voll isch dr Tank? Dann sag i dir, ob warta sich lohnt.", "Wie voll ist der Tank? Dann sagt die App, ob Warten sich lohnt.")}</p>`}</div>`;
+}
 function renderWhen(headOnly = false) {
   const el = $("#when");
   if (!el || !view || view.error) return;
@@ -437,7 +454,7 @@ function renderWhen(headOnly = false) {
   const law = noonCtx ? `<p class="small" style="margin:12px 0 0">${NOON_LAW} Beobachtet: ${fmtNum(noonCtx.info.share * 100, 0)} % aller Preiserhöhungen der letzten Tage lagen zwischen 12 und 13 Uhr.</p>` : "";
   if (!head && !tipRow && !fcRow) { el.innerHTML = ""; return; }
   el.innerHTML = `<section class="card when${head?.soon ? " soon" : ""}"><span class="eyebrow">${say("Wann tanka?", "Wann tanken?")} · ${FUELS[fuel]}</span>
-    <div id="whenHead">${head ? head.html : ""}</div>${tipRow}${fcRow}${law}</section>`;
+    <div id="whenHead">${head ? head.html : ""}</div>${tankrat(P)}${tipRow}${fcRow}${law}</section>`;
 }
 document.addEventListener("toggle", (e) => { if (e.target.id === "fcDetails") fcOpen = e.target.open; }, true);
 setInterval(() => { if (!document.hidden) renderWhen(true); }, 30000);

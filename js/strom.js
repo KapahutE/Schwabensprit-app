@@ -24,6 +24,7 @@ const Strom = (() => {
     open: null, all: false, focus: null, favSt: new Map(),
   };
   const FRESH = 2 * 36e5;   // Belegung zählt nur, wenn sie höchstens 2 Std. alt ist (viele Feeds melden nur bei Änderung oder gar nicht mehr)
+  const eff = (k) => k.raw !== "unk" && k.ts && Date.now() - k.ts <= FRESH ? k.raw : "unk";   // wirksamer Status zum Anzeigezeitpunkt
   const KWH = () => { const v = parseFloat(String(store.get("kwh", "30")).replace(",", ".")); return v > 0 && v <= 200 ? v : 30; };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let seq = 0;
@@ -89,8 +90,8 @@ const Strom = (() => {
       if (ev.presence === "ABSENT") continue;
       for (const k of ev.connectors || []) {
         const kw = (k.max_electric_power || 0) / 1000;
-        const t = ev.status_last_updated ? Date.parse(ev.status_last_updated) : NaN, raw = stOf(ev.status), fresh = raw !== "unk" && Number.isFinite(t) && Date.now() - t <= FRESH;
-        cons.push({ std: stdName(k.standard), kw: Math.round(kw * 10) / 10, dc: k.power_type === "DC", tid: k.tariff_ids || [], st: fresh ? raw : "unk", raw, ts: Number.isFinite(t) ? t : null, ev: ev.uid });
+        const t = ev.status_last_updated ? Date.parse(ev.status_last_updated) : NaN;
+        cons.push({ std: stdName(k.standard), kw: Math.round(kw * 10) / 10, dc: k.power_type === "DC", tid: k.tariff_ids || [], raw: stOf(ev.status), ts: Number.isFinite(t) ? t : null, ev: ev.uid });
       }
       seen.add(ev.uid);
     }
@@ -99,26 +100,34 @@ const Strom = (() => {
     const upd = (x.evses || []).map((e) => e.status_last_updated).filter(Boolean).sort().at(-1) || null;
     return {
       id: "ev" + x.id, uid: x.id, src: x.source, country: x.country || "", brand: shortOp(op) || op, op, place: tidy(x.city || ""), street: tidy(x.address || ""), plz: x.postal_code || "", lat: la, lng: ln,
-      cons, live: cons.some((k) => k.st !== "unk"), upd, hours: x.opening_times || null, phone: x.help_phone || "", name: x.name || "",
+      cons, live: cons.some((k) => k.raw !== "unk"), upd, hours: x.opening_times || null, phone: x.help_phone || "", name: x.name || "",
       kw: Math.max(...cons.map((k) => k.kw)), dist: c ? distKm(c.lat, c.lng, la, ln) : null,
     };
   }
   // Register und Betreiber melden dieselbe Säule oft doppelt: Register-Eintrag weglassen, wenn ein Betreiber-Eintrag < 60 m daneben liegt
+  // Raster (≈ 70 m): gleich nahe Stationen liegen in derselben oder einer Nachbarzelle – statt jeden mit jedem zu vergleichen
+  const CLAT = 0.0007, CLNG = 0.0012;
+  const gridAdd = (g, s) => { const k = `${Math.floor(s.lat / CLAT)},${Math.floor(s.lng / CLNG)}`; (g.get(k) || (g.set(k, []), g.get(k))).push(s); };
+  function gridNear(g, s, maxKm, ok = () => true) {
+    const cy = Math.floor(s.lat / CLAT), cx = Math.floor(s.lng / CLNG);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const a = g.get(`${cy + dy},${cx + dx}`); if (a) for (const t of a) if (ok(t) && distKm(t.lat, t.lng, s.lat, s.lng) < maxKm) return t; }
+    return null;
+  }
   function dedupe(list) {
-    const live = list.filter((s) => s.src !== "bnetza_api");
-    const kept = list.filter((s) => s.src !== "bnetza_api" || !live.some((t) => Math.abs(t.lat - s.lat) < 0.0006 && Math.abs(t.lng - s.lng) < 0.0009 && distKm(t.lat, t.lng, s.lat, s.lng) < 0.06));
+    const live = new Map();
+    for (const s of list) if (s.src !== "bnetza_api") gridAdd(live, s);
+    const kept = list.filter((s) => s.src !== "bnetza_api" || !gridNear(live, s, 0.06));
     // derselbe Betreiber am selben Ort (Parkhaus mit vielen Ladepunkten wird oft als viele Standorte gemeldet): zusammenfassen
-    const byOp = new Map(), out = [];
+    const grid = new Map(), out = [];
     for (const s of kept) {
-      const arr = byOp.get(s.op) || (byOp.set(s.op, []), byOp.get(s.op));
-      const o = arr.find((t) => Math.abs(t.lat - s.lat) < 0.0006 && Math.abs(t.lng - s.lng) < 0.0009 && distKm(t.lat, t.lng, s.lat, s.lng) < 0.05);
-      if (!o) { const c = { ...s, cons: [...s.cons] }; arr.push(c); out.push(c); }
+      const o = gridNear(grid, s, 0.05, (t) => t.op === s.op);
+      if (!o) { const c = { ...s, cons: [...s.cons] }; gridAdd(grid, c); out.push(c); }
       else { o.cons.push(...s.cons); o.live ||= s.live; if (s.upd && (!o.upd || s.upd > o.upd)) o.upd = s.upd; o.kw = Math.max(o.kw, s.kw); }
     }
     return out;
   }
   // Alle Ladestationen im Umkreis (Mittelpunkt auf ca. 100 m gerundet); mehrere Seiten, nächste zuerst
-  async function fetchRaw(lat, lng, rKm) {
+  async function fetchRaw(lat, lng, rKm, onPage) {
     const base = (await endpoints()).evApi;
     const la = lat.toFixed(3), ln = lng.toFixed(3), out = [];
     let total = 0, cut = false;
@@ -129,13 +138,14 @@ const Strom = (() => {
       total = d.total_count || 0;
       out.push(...(d.items || []));
       if (d.next_offset == null || !d.items?.length) break;
+      if (onPage) await onPage(out, total);   // erste Seite (die nächsten 1000) schon zeigen, der Rest lädt nach
       off = d.next_offset;
       if (page === MAX_PAGES - 1) cut = true;
     }
     return { items: out, total, cut };
   }
-  async function fetchArea(lat, lng, rKm, c) {
-    const r = await fetchRaw(lat, lng, rKm);
+  async function fetchArea(lat, lng, rKm, c, onPart) {
+    const r = await fetchRaw(lat, lng, rKm, onPart && ((items, total) => onPart({ list: dedupe(items.map((x) => norm(x, c)).filter(Boolean)), total })));
     return { list: dedupe(r.items.map((x) => norm(x, c)).filter(Boolean)), total: r.total, cut: r.cut };
   }
   async function load(force = false) {
@@ -147,15 +157,32 @@ const Strom = (() => {
     const my = ++seq;
     S.busy = true; S.err = null; paint();
     try {
-      const [res] = await Promise.all([fetchArea(c.lat, c.lng, rKm, c), loadTariffs().catch(() => null)]);
+      const tarP = loadTariffs().catch(() => null);
+      const [res] = await Promise.all([fetchArea(c.lat, c.lng, rKm, c, async (part) => {
+        await tarP;   // Zwischenstand erst mit Preisen zeigen
+        if (my === seq && !S.stations.length) { Object.assign(S, { key, at: Date.now(), stations: part.list, total: part.total, cut: false }); paint(); }
+      }), tarP]);
       if (my !== seq) return;
-      Object.assign(S, { key, at: Date.now(), stations: res.list, total: res.total, cut: res.cut });
+      Object.assign(S, { key, at: Date.now(), stations: res.list, total: res.total, cut: res.cut, fromCache: false });
+      kv.set("ev:last", { key, at: S.at, stations: res.list, total: res.total, cut: res.cut });   // für den Sofortstart / ohne Netz
       if (!res.list.length) S.err = null;
       setTimeout(loadFavs, 0);
     } catch (e) {
       if (my !== seq) return;
-      S.err = e.name === "AbortError" ? "Zeitüberschreitung" : e.message;
+      S.err = e.name === "AbortError" ? "Zeitüberschreitung" : (navigator.onLine === false ? "Kein Netz" : e.message);
     } finally { if (my === seq) { S.busy = false; paint(); } }
+  }
+  // Sofortstart: zuletzt geladene Ladestationen aus dem Zwischenspeicher, solange das Netz noch antwortet (gleicher Ort und Umkreis)
+  async function restore() {
+    const c = center();
+    if (!c || S.stations.length || S.restoring) return;
+    S.restoring = true;
+    const d = await kv.get("ev:last");
+    S.restoring = false;
+    const key = `${c.lat.toFixed(3)},${c.lng.toFixed(3)},${Math.min(radius, MAX_KM)}`;
+    if (!d?.stations?.length || d.key !== key || S.stations.length) return;
+    Object.assign(S, { key, at: d.at, stations: d.stations, total: d.total, cut: d.cut, fromCache: true });
+    paint();
   }
 
   // ---- Preise und Belegung einer Station (abhängig vom Leistungsfilter)
@@ -173,8 +200,8 @@ const Strom = (() => {
     else if (d != null && (c == null || d <= c)) { e = d; src = "direct"; }
     else if (c != null) { e = c; src = "card"; }
     const use = src === "direct" ? dir : null;
-    const free = new Set(cons.filter((k) => k.st === "free").map((k) => k.ev)).size, all = new Set(cons.map((k) => k.ev)).size;
-    const known = cons.some((k) => k.st !== "unk"), out = known && cons.every((k) => k.st === "out");
+    const free = new Set(cons.filter((k) => eff(k) === "free").map((k) => k.ev)).size, all = new Set(cons.map((k) => k.ev)).size;
+    const known = cons.some((k) => eff(k) !== "unk"), out = known && cons.every((k) => eff(k) === "out");
     const stale = !known && cons.some((k) => k.raw !== "unk");   // gemeldet, aber nicht mehr aktuell
     return { s, cons, e, src, d, c, card: cd ? cd.card : null, flat: use ? use[1] : 0, tp: use ? use[2] : 0, tfrom: use ? use[3] : 0, free, all, known, stale, out, full: known && !out && free === 0,
       cardBad: d != null && c != null && c > d + 0.005, cardLow: d != null && c != null && c < d * 0.5,
@@ -234,7 +261,15 @@ const Strom = (() => {
     return h.regular_hours.some((r) => +r.weekday === wd && t >= mm(r.period_begin) && (t < mm(r.period_end) || r.period_end === "24:00" || r.period_end === "00:00"));
   }
   const ct2 = (v) => eur2s(v) + " €/kWh";
-  const stand = () => S.at ? `<i></i>⚡ Stand ${esc(ago(new Date(S.at).toISOString()))}` : "";
+  const stand = () => S.at ? `<i></i>⚡ ${S.fromCache ? "Gespeichert · " : ""}Stand ${esc(ago(new Date(S.at).toISOString()))}` : "";
+  // Kosten je 100 km mit dem günstigsten Preis – und zum Vergleich Sprit (Median der Tankstellen hier, wenn Preisdaten geladen sind)
+  const EVC = () => { const v = parseFloat(String(store.get("evcons", "18")).replace(",", ".")); return v > 3 && v <= 60 ? v : 18; };
+  function per100Html(e) {
+    if (e == null) return "";
+    const fs = view?.stations ? view.stations.filter((s) => hasPrice(s)).map((s) => s[fuel]) : [];
+    const fp = fs.length >= 3 ? median(fs) : null;
+    return `<p class="quip">🔋 ≈ ${eur2(e * EVC())} je 100 km (${fmtNum(EVC(), 0)} kWh/100 km)${fp ? ` · Sprit ≈ ${eur2(fp * CONS())} (${FUELS[fuel]} Ø ${eurX(fp)}, ${fmtNum(CONS(), 1)} l/100 km)` : ""}</p>`;
+  }
   const lvOf = (priced) => {
     const med = median(priced.map((v) => v.e));
     return (v) => v.e == null || med == null ? "off" : v.e <= med - 0.03 ? "lo" : v.e >= med + 0.03 ? "hi" : "mid";
@@ -284,7 +319,7 @@ const Strom = (() => {
     for (const k of v.cons) {
       const t = tariffOf(k), key = `${k.std}|${k.kw}|${t ? t.join() : ""}`;
       const g = groups.get(key) || { k, t, n: 0, free: 0, known: false, last: null };
-      g.n++; if (k.st === "free") g.free++; if (k.st !== "unk") g.known = true;
+      g.n++; if (eff(k) === "free") g.free++; if (eff(k) !== "unk") g.known = true;
       if (k.raw !== "unk" && k.ts && (!g.last || k.ts > g.last.ts)) g.last = { ts: k.ts, raw: k.raw };
       groups.set(key, g);
     }
@@ -296,7 +331,7 @@ const Strom = (() => {
         <div class="evt">${esc(tx(g.t))}</div>${cardLine(v, g)}<div class="evs">${g.known ? `<span class="evst ${g.free ? "ok" : "busy"}">${g.free} von ${g.n} frei</span>`
           : `<span class="evst unk">Belegung unbekannt${g.last ? `<br>zuletzt ${NAMES[g.last.raw] || "gemeldet"} ${esc(ago(new Date(g.last.ts).toISOString()))}` : ""}</span>`}</div></div>`).join("")}</div>
       <div class="sub">${esc(s.street)}${s.plz || s.place ? ", " : ""}${esc((s.plz + " " + s.place).trim())}${hrs ? " · " + hrs : ""}<br>
-        Betreiber: ${esc(s.op)}${s.phone ? ` · <a href="tel:${esc(s.phone.replace(/[^+\d]/g, ""))}">${esc(s.phone)}</a>` : ""}${cost != null ? `<br>≈ ${eur2(cost)} für ${fmtNum(KWH(), 0)} kWh (${costNote})` : ""}<br>
+        Betreiber: ${esc(s.op)}${s.phone ? ` · <a href="tel:${esc(s.phone.replace(/[^+\d]/g, ""))}">${esc(s.phone)}</a>` : ""}${cost != null ? `<br>≈ ${eur2(cost)} für ${fmtNum(KWH(), 0)} kWh (${costNote}) · ≈ ${eur2(v.e * EVC())} je 100 km` : ""}<br>
         <span class="small">Quelle: ${esc(SRC[s.src] || s.src)}${s.upd ? ` · Belegung ${esc(ago(s.upd))}` : ""}</span></div>
       <div class="row"><a class="btn" href="${esc((ctx?.gmaps || gmaps)(s))}" target="_blank" rel="noopener">${NAV} ${ctx ? "Ladestopp (Google Maps)" : "Route (Google Maps)"}</a>
         <a class="btn secondary" href="${esc((ctx?.apple || apple)(s))}" target="_blank" rel="noopener">Apple Karten</a>
@@ -346,6 +381,7 @@ const Strom = (() => {
           <div class="sub">${esc(s.street)} · ${km(s.dist)} · ${power(cheapest)}</div></div></div>
         ${cheapest.src === "card" ? `<p class="quip">💳 Mit deiner Karte „${esc(cheapest.card.name)}“ – Eigeneingabe, bestätigt ${esc(Karte.ago(cheapest.card))}${cheapest.d != null ? ` · Direktzahlung hier: ${Karte.f2(cheapest.d)} €/kWh` : " · kein Direktpreis gemeldet"}</p>` : ""}
         <div class="row" style="margin-top:8px">${avail(cheapest)}${priced.length > 1 && save > 0.005 ? pill(-(med - cheapest.e), `${ct(cheapest.e - med)} unter Ø`) : ""}</div>
+        ${per100Html(cheapest.e)}
         ${cheapest.flat > 0 || cheapest.tp > 0 ? `<p class="quip">${esc(tariffText(cheapest))}</p>` : ""}
         <div class="row two"><a class="btn" href="${esc(gmaps(s))}" target="_blank" rel="noopener">${NAV} Route</a>
           <button class="btn secondary" data-evst="${esc(s.id)}" data-evgo>Details</button></div></section>`;
@@ -467,6 +503,7 @@ const Strom = (() => {
     }
     if (!$("#evBody")) main.innerHTML = `<div id="evBody"></div>`;
     paint();
+    restore();
     load();
   }
   const invalidate = () => { S.at = 0; };
@@ -539,6 +576,7 @@ const Strom = (() => {
           <div class="sub">${whereTxt(cheapest)} · ${power(cheapest)}</div></div></div>
         ${cheapest.src === "card" ? `<p class="quip">💳 Mit deiner Karte „${esc(cheapest.card.name)}“ – Eigeneingabe, bestätigt ${esc(Karte.ago(cheapest.card))}${cheapest.d != null ? ` · Direktzahlung hier: ${Karte.f2(cheapest.d)} €/kWh` : " · kein Direktpreis gemeldet"}</p>` : ""}
         <div class="row" style="margin-top:8px">${avail(cheapest)}</div>
+        ${per100Html(cheapest.e)}
         ${cheapest.flat > 0 || cheapest.tp > 0 ? `<p class="quip">${esc(tariffText(cheapest))}</p>` : ""}
         <div class="row two"><a class="btn" href="${esc(ctx.gmaps(s))}" target="_blank" rel="noopener">${NAV} Ladestopp</a>
           <button class="btn secondary" data-evmap="${esc(s.id)}">${say("Uff dr Kart", "Auf Karte")}</button></div></section>`;
