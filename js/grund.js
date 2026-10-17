@@ -533,7 +533,6 @@ function render() {
   main.innerHTML = tab === "verlauf" ? verlaufHtml() : preiseHtml();
   if (tab === "preise") {
     renderFavs();
-    Witz.render();
     checkHealth();
     if (viewMode === "map" && view.stations.length) mountMap();
   }
@@ -985,7 +984,6 @@ function openSettings() {
   $("#inToken").value = token();
   $("#inTk").value = store.get("tk", "");
   $("#inDialect").checked = SW();
-  $("#inWitz").checked = store.get("witz", "1") === "1";
   $("#inRtKeep").checked = store.get("rtKeep", "1") === "1";
   $("#inTokExp").value = store.get("tokenExp", "");
   $("#inHome").innerHTML = bases.map((b) => `<option value="${esc(b.id)}">${esc(b.name)} · ${esc(b.place)}</option>`).join("");
@@ -1004,7 +1002,6 @@ function saveSettings() {
   store.set("token", $("#inToken").value.trim());
   store.set("tk", $("#inTk").value.trim());
   store.set("dialect", $("#inDialect").checked ? "1" : "0");
-  store.set("witz", $("#inWitz").checked ? "1" : "0");
   store.set("rtKeep", $("#inRtKeep").checked ? "1" : "0");
   if (!$("#inRtKeep").checked) store.set("rtLast", "");
   store.set("tokenExp", $("#inTokExp").value);

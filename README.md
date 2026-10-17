@@ -56,7 +56,6 @@ Eine App für beide Systeme (Progressive Web App, kein Store nötig):
 | `sw.js` | Service Worker: Sofortstart und Betrieb ohne Netz |
 | `tests/` | Unit-Tests, Browser-Tests und Testdaten |
 | `endpoints.json` | Adressen von Routing-, Such- und E-Control-Dienst (austauschbar ohne Code-Änderung) |
-| `js/witz.js` | „Witz vom Dag“: Hannes & Lena (eigene Figuren), Dialog Zeile für Zeile, abschaltbar unter ⚙ |
 | `js/preise.js` | Bereich Preise, „Wann tanka?“, Karte, Detailansicht |
 | `js/verlauf.js` | Auswertung, Bereich Verlauf, Wochenreports |
 | `js/belegleser.js` | Belegfoto aufbereiten, Texterkennung (Tesseract.js in `ocr/`), Werte und Tankstelle erkennen |
