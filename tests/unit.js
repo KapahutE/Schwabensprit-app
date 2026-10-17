@@ -115,4 +115,25 @@ const fs = require("fs"), path = require("path"), vm = require("vm"), { spawnSyn
   S.stations = [mk("ch", "free", 1, { country: "CHE" })]; S.basis = "best";
   check("Schweiz: kein Kartenpreis (Euro gilt nur in Deutschland)", St.rows().all[0].src === "direct" && St.rows().all[0].c == null);
 }
+// ---- 5. Android und iPhone: Geräteerkennung, Maps-Intent, Manifest (Symbole, Verknüpfungen)
+{
+  const src = fs.readFileSync(path.join(ROOT, "js/grund.js"), "utf8");
+  const pick = (re) => { const m = src.match(re); if (!m) throw new Error("nicht gefunden: " + re); return m[0]; };
+  const ctx = vm.createContext({ URL, encodeURIComponent, navigator: {} });
+  vm.runInContext(pick(/function platformOf[\s\S]*?\n}\n/) + pick(/const mapsIntent = .*\n/) + "\n;this.platformOf = platformOf; this.mapsIntent = mapsIntent;", ctx);
+  const P = (ua, plat = "", touch = 0) => ctx.platformOf(ua, plat, touch);
+  check("Gerät: iPhone", P("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari", "iPhone", 5).ios === true && P("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", "iPhone", 5).android === false);
+  check("Gerät: iPad (meldet sich als Mac, hat Touch) ist iOS", P("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", "MacIntel", 5).ios === true);
+  check("Gerät: Mac ohne Touch ist Apple, aber nicht iOS", P("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", "MacIntel", 0).apple === true && P("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", "MacIntel", 0).ios === false);
+  check("Gerät: Android (Chrome, Samsung Internet)", P("Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36", "Linux armv81", 5).android === true && P("Mozilla/5.0 (Linux; Android 13; SM-S918B) SamsungBrowser/23.0 Chrome/115 Mobile", "Linux armv81", 5).apple === false);
+  check("Gerät: Windows/Linux-Desktop ist weder Android noch Apple", ["ios", "android", "apple"].every((k) => P("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120", "Win32", 0)[k] === false));
+  const it = ctx.mapsIntent("https://www.google.com/maps/dir/?api=1&destination=48.5%2C9.2&travelmode=driving");
+  check("Android: Maps-Intent mit Maps-App und Rückfall auf die Webadresse", it.startsWith("intent://www.google.com/maps/dir/?api=1&destination=48.5%2C9.2&travelmode=driving#Intent;scheme=https;package=com.google.android.apps.maps;S.browser_fallback_url=https%3A%2F%2Fwww.google.com%2Fmaps%2Fdir%2F") && it.endsWith(";end"), it);
+  const mf = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.webmanifest"), "utf8")), png = (f) => { const b = fs.readFileSync(path.join(ROOT, f)); return b.readUInt32BE(16) + "x" + b.readUInt32BE(20); };
+  const pngs = mf.icons.filter((i) => i.type === "image/png");
+  check("Manifest: Symbole vorhanden, Größe stimmt (192, 512, maskable, monochrome)", pngs.every((i) => fs.existsSync(path.join(ROOT, i.src)) && png(i.src) === i.sizes) && ["any", "maskable", "monochrome"].every((u) => pngs.some((i) => i.purpose === u)) && pngs.some((i) => i.sizes === "192x192") && pngs.some((i) => i.sizes === "512x512"), pngs.map((i) => i.src + " " + i.sizes));
+  const tabs = src.match(/const TABS = \[(.*?)\]/)[1].replace(/"/g, "").split(/,\s*/);
+  check("Manifest: Verknüpfungen zeigen auf vorhandene Bereiche", mf.shortcuts.length >= 3 && mf.shortcuts.every((x) => tabs.includes(new URL(x.url, "http://x/").searchParams.get("tab"))), mf.shortcuts.map((x) => x.url));
+  check("Manifest: Startadresse und Umfang relativ, Anzeige als App", mf.start_url === "./" && mf.scope === "./" && mf.display === "standalone");
+}
 done("Unit-Tests");

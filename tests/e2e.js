@@ -1,5 +1,6 @@
-// Browser-Tests (Playwright, Chromium, iPhone-Größe) mit festen Testdaten und nachgestellten Diensten: node tests/e2e.js
-// Env: LEAFLET_DIR = lokale Kopie von leaflet@1.9.4/dist (sonst wird unpkg wirklich abgerufen)
+// Browser-Tests (Playwright, Chromium, Handy-Größe) mit festen Testdaten und nachgestellten Diensten: node tests/e2e.js
+// Env: DEVICE = Gerät aus Playwright (Standard "iPhone 13"; "Pixel 7" für Android)
+//      LEAFLET_DIR = lokale Kopie von leaflet@1.9.4/dist (sonst wird unpkg wirklich abgerufen)
 "use strict";
 const { check, done, fixture, playwright, serve, ROOT } = require("./lib.js");
 const fs = require("fs"), path = require("path");
@@ -8,7 +9,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
   const { chromium, devices } = playwright(), srv = await serve(), browser = await chromium.launch();
-  const ctx = await browser.newContext({ ...devices["iPhone 13"], timezoneId: "Europe/Berlin", locale: "de-DE", serviceWorkers: "allow" });
+  const DEVICE = process.env.DEVICE || "iPhone 13", ANDROID = /Android/.test(devices[DEVICE].userAgent);
+  const ctx = await browser.newContext({ ...devices[DEVICE], timezoneId: "Europe/Berlin", locale: "de-DE", serviceWorkers: "allow" });
   const bases = fixture("bases.json"), latest = fixture("latest-H.json"), EVL = fixture("ev-locations.json"), EVT = fixture("ev-tariffs.json"), OSRM = JSON.stringify(fixture("route-stgt-ulm.json"));
   const state = { offline: false, loc: 0, csp: [] };
   const H = { "access-control-allow-origin": "*" }, J = { ...H, "content-type": "application/json" };
@@ -140,6 +142,71 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       return { t: (e.textContent || e.getAttribute("aria-label") || "").trim().slice(0, 14), h: Math.round(r.height + ext) };
     }).filter((x) => x.h < 44));
     check("Bedienbarkeit: Tippflächen mindestens 44 px", small.length === 0, small);
+
+    // ---- Android und iPhone: Karten-Knöpfe, Zurück-Taste, Installation, Verknüpfungen, schmale Bildschirme
+    const back = async () => { await p.evaluate(() => history.back()); await p.waitForTimeout(250); };
+    const bodyTab = () => p.evaluate(() => document.body.dataset.tab);
+    if (!(await n("#evBody .rtdet"))) await p.click("#evBody .rtitem:has(.p b) .item >> nth=0");
+    const hrefs = await p.locator("#evBody .rtdet").first().locator(".row a.btn").evaluateAll((a) => a.map((x) => x.getAttribute("href")));
+    check(ANDROID ? "Android: Google Maps und „Andere Karten-App“ (geo:), kein Apple Karten" : "iPhone: Google Maps und Apple Karten, kein geo:",
+      hrefs.filter((h) => /google\.com\/maps/.test(h)).length === 1 && (ANDROID ? hrefs.filter((h) => /^geo:\d/.test(h)).length === 1 && !hrefs.some((h) => /apple/.test(h)) : hrefs.filter((h) => /maps\.apple\.com/.test(h)).length === 1 && !hrefs.some((h) => /^geo:/.test(h))), hrefs);
+    await p.evaluate(() => { window.__nav = null; navTo = (u) => { window.__nav = u; }; window.open = () => null; });
+    if (ANDROID) await p.locator("#evBody .rtdet").first().locator("a[href*='google.com/maps']").click();
+    else await p.evaluate(() => openRoute({ lat: 48.5, lng: 9.2 }));
+    const nav = await p.evaluate(() => window.__nav);
+    check(ANDROID ? "Android: Google-Maps-Knopf öffnet die Maps-App (Intent mit Rückfall auf die Webseite)" : "iPhone: Route öffnet Google Maps über comgooglemaps://",
+      ANDROID ? /^intent:\/\/www\.google\.com\/maps\/.*package=com\.google\.android\.apps\.maps;S\.browser_fallback_url=https%3A%2F%2Fwww\.google\.com%2Fmaps%2F/.test(nav) : /^comgooglemaps:\/\/\?daddr=48\.5%2C9\.2/.test(nav), nav);
+    if (ANDROID) { await p.evaluate(() => { window.__nav = null; openRoute({ lat: 48.5, lng: 9.2 }); }); check("Android: „Route“ (Detailansicht) nutzt denselben Intent", /^intent:\/\/www\.google\.com\/maps\/dir\//.test(await p.evaluate(() => window.__nav))); }
+    if (!ANDROID) await p.waitForTimeout(1400);   // iPhone: nach 1,2 s folgt der Rückfall auf die Webseite (hier ebenfalls abgefangen)
+    await p.evaluate(() => { navTo = (u) => { location.href = u; }; });
+
+    await p.click("#tabbar [data-tab=route]"); await p.waitForTimeout(200); await p.click("#tabbar [data-tab=verlauf]"); await p.waitForTimeout(200);
+    check("Zurück-Taste: Wechsel zwischen Bereichen legt nur einen Verlaufseintrag an", await p.evaluate(() => history.state?.t === 1) && await bodyTab() === "verlauf");
+    await back();
+    check("Zurück-Taste: aus „Verlauf“ zurück zu „Preise“ (statt die App zu verlassen)", await bodyTab() === "preise" && await p.evaluate(() => history.state?.t == null), await bodyTab());
+    await p.click("#seg [data-f=e5]"); await p.waitForSelector("#main .hero .price", T);
+    await p.click("#main .list .item >> nth=0"); await p.waitForSelector("#detail.open"); await back();
+    check("Zurück-Taste: schließt die Detailansicht, bleibt in „Preise“", !(await p.evaluate(() => document.querySelector("#detail").classList.contains("open"))) && await bodyTab() === "preise");
+    await p.click("#tabbar [data-tab=route]"); if (await p.$("#rtBody [data-rtgo]")) await p.click("#rtBody [data-rtgo]"); await p.waitForSelector("#rtBody .rtlist .rtitem", T);
+    await p.waitForFunction(() => !document.querySelector("#rtBody .spin-dot"), null, T);
+    await p.click("#rtBody .rtlist .rtitem .item >> nth=0"); await p.click("#rtBody [data-detail] >> nth=0"); await p.waitForSelector("#detail.open"); await back();
+    check("Zurück-Taste: Detailansicht aus „Route“ schließt nur die Ansicht", !(await p.evaluate(() => document.querySelector("#detail").classList.contains("open"))) && await bodyTab() === "route");
+    await back();
+    check("Zurück-Taste: danach zurück zu „Preise“", await bodyTab() === "preise");
+    await p.click("#tabbar [data-tab=route]"); await p.click("#tabbar [data-tab=preise]"); await p.waitForTimeout(250);
+    check("Zurück-Taste: „Preise“ antippen räumt den Verlaufseintrag wieder ab", await p.evaluate(() => history.state?.t == null) && await bodyTab() === "preise");
+
+    await p.click("#btnSettings"); await p.waitForTimeout(150);
+    check(ANDROID ? "Installieren (Android): Anleitung über das Browser-Menü" : "Installieren (iPhone): Anleitung „Teilen → Zum Home-Bildschirm“",
+      await p.isVisible("#instBox") && !(await p.isVisible("#btnInstall")) && (ANDROID ? /⋮/.test(await tx("#instTxt")) : /Teilen/.test(await tx("#instTxt"))), await tx("#instBox"));
+    await p.click("#btnDlgCancel");
+    await p.evaluate(() => { window.__prompted = 0; const e = new Event("beforeinstallprompt", { cancelable: true }); e.prompt = async () => { window.__prompted++; }; e.userChoice = Promise.resolve({ outcome: "accepted" }); window.dispatchEvent(e); });
+    const bar = await p.evaluate(() => [...document.querySelectorAll("#instBar button")].map((b) => Math.round(b.getBoundingClientRect().height)));
+    check("Installieren: Hinweis erscheint bei „beforeinstallprompt“, Knöpfe mindestens 44 px", await p.isVisible("#instBar") && bar.length === 2 && bar.every((h) => h >= 44), bar);
+    await p.click("#btnInstBar"); await p.waitForTimeout(150);
+    check("Installieren: Knopf ruft die Installation des Browsers auf, Hinweis verschwindet", await p.evaluate(() => window.__prompted) === 1 && !(await p.isVisible("#instBar")));
+    await p.evaluate(() => { const e = new Event("beforeinstallprompt", { cancelable: true }); e.prompt = async () => {}; e.userChoice = Promise.resolve({}); window.dispatchEvent(e); });
+    await p.click("#btnSettings"); await p.waitForTimeout(150);
+    check("Installieren: Einstellungen zeigen den Knopf „App installieren“", await p.isVisible("#btnInstall")); await p.click("#btnDlgCancel");
+    await p.click("#btnInstNo"); await p.evaluate(() => { const e = new Event("beforeinstallprompt", { cancelable: true }); e.prompt = async () => {}; e.userChoice = Promise.resolve({}); window.dispatchEvent(e); });
+    check("Installieren: weggeklickter Hinweis kommt nicht wieder", !(await p.isVisible("#instBar")));
+
+    const p2 = await ctx.newPage(); await p2.goto(srv.url + "?tab=verlauf&ev=0"); await p2.waitForSelector("#main", T); await p2.waitForTimeout(1500);
+    const lk = await p2.evaluate(() => ({ tab: document.body.dataset.tab, url: location.search, st: history.state, ev: localStorage.getItem("ev") }));
+    check("Verknüpfung ?tab=verlauf: öffnet den Bereich, Adresse wird bereinigt, „Zurück“ führt zu „Preise“", lk.tab === "verlauf" && lk.url === "" && lk.st?.t === 1 && lk.ev === "0", lk);
+    await p2.evaluate(() => history.back()); await p2.waitForTimeout(250);
+    check("Verknüpfung: Zurück → Preise", await p2.evaluate(() => document.body.dataset.tab) === "preise");
+    await p2.goto(srv.url + "?tab=preise&ev=1"); await p2.waitForSelector("#evBody .list .rtitem", T);
+    check("Verknüpfung ?ev=1: öffnet die Ladestationen (⚡ Strom)", /Strom/.test(await p2.innerText("#seg .on")) && await p2.evaluate(() => localStorage.getItem("ev")) === "1");
+    await p2.close();
+
+    const W = ANDROID ? [360, 412] : [320, 390], widths = [];
+    for (const w of W) { await p.setViewportSize({ width: w, height: 760 });
+      for (const t of ["preise", "route", "verlauf", "tankbuch"]) { await p.click(`#tabbar [data-tab=${t}]`); await p.waitForTimeout(250); const sw = await p.evaluate(() => document.documentElement.scrollWidth);
+        if (sw > w) widths.push(`${t}@${w}: ${sw} · ${await p.evaluate((w) => [...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > w + 1 && e.offsetParent && !e.closest(".leaflet-container, .cw, svg")).slice(0, 4).map((e) => e.tagName + "." + e.className + " " + Math.round(e.getBoundingClientRect().right) + " «" + e.outerHTML.slice(0, 90).replace(/\s+/g, " ") + "»").join(" | "), w)}`); } }
+    check(`Schmale Bildschirme (${W.join(", ")} px): kein seitliches Scrollen in allen Bereichen`, widths.length === 0, widths);
+    await p.setViewportSize(devices[DEVICE].viewport);
+    await p.click("#tabbar [data-tab=preise]"); await p.click("#seg [data-f=ev]"); await p.waitForSelector("#evBody .list .rtitem", T);
 
     // ---- Service Worker: Offline-Start
     await p.evaluate(() => navigator.serviceWorker.ready); await p.reload(); await p.waitForSelector("#evBody .list .rtitem", T); await p.waitForTimeout(800);

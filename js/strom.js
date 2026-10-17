@@ -334,7 +334,7 @@ const Strom = (() => {
         Betreiber: ${esc(s.op)}${s.phone ? ` · <a href="tel:${esc(s.phone.replace(/[^+\d]/g, ""))}">${esc(s.phone)}</a>` : ""}${cost != null ? `<br>≈ ${eur2(cost)} für ${fmtNum(KWH(), 0)} kWh (${costNote}) · ≈ ${eur2(v.e * EVC())} je 100 km` : ""}<br>
         <span class="small">Quelle: ${esc(SRC[s.src] || s.src)}${s.upd ? ` · Belegung ${esc(ago(s.upd))}` : ""}</span></div>
       <div class="row"><a class="btn" href="${esc((ctx?.gmaps || gmaps)(s))}" target="_blank" rel="noopener">${NAV} ${ctx ? "Ladestopp (Google Maps)" : "Route (Google Maps)"}</a>
-        <a class="btn secondary" href="${esc((ctx?.apple || apple)(s))}" target="_blank" rel="noopener">Apple Karten</a>
+        ${mapAlt((ctx?.apple || apple)(s), s)}
         <button class="btn secondary" data-evmap="${esc(s.id)}">Auf Karte</button>
         <button class="btn secondary" data-evfav="${esc(s.id)}" aria-pressed="${isFav(s)}">${isFav(s) ? "★ Favorit" : "☆ Favorit"}</button></div></div>`;
   }

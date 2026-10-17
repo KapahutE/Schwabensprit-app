@@ -186,7 +186,7 @@ function renderTankbuch() {
     <div class="sec"><h2>Daten</h2></div>
     <div class="row two"><button class="btn secondary" id="btnTbCsv">Als CSV exportieren</button><button class="btn secondary" id="btnTbBackup">Sicherung speichern</button></div>
     <div class="row"><button class="btn secondary block" id="btnTbRestore">Sicherung laden</button></div>
-    <p class="small" style="margin-top:10px">Das ${TB_NAME()} bleibt nur auf diesem Gerät gespeichert – Belege werden direkt auf dem iPhone ausgelesen (Tesseract.js, Open Source), nichts wird hochgeladen. Ab und zu eine Sicherung speichern, z. B. in iCloud Drive.</p>`;
+    <p class="small" style="margin-top:10px">Das ${TB_NAME()} bleibt nur auf diesem Gerät gespeichert – Belege werden direkt auf dem Gerät ausgelesen (Tesseract.js, Open Source), nichts wird hochgeladen. Ab und zu eine Sicherung speichern, z. B. in ${PLAT.android ? "Google Drive" : "iCloud Drive"}.</p>`;
 }
 
 // ---- Erfassen / Bearbeiten

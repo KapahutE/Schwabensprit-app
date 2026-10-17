@@ -476,7 +476,13 @@ function closeDetail(fromPop) {
   document.body.classList.remove("lock");
   if (!fromPop) try { window.history.back(); } catch {}
 }
-window.addEventListener("popstate", () => { closeReport(); closeDetail(true); });
+window.addEventListener("popstate", () => {
+  const overlay = detailId || $("#report").classList.contains("open");
+  closeReport(); closeDetail(true);
+  if (!overlay && !tabState() && tab !== "preise") setTab("preise", true);   // Zurück aus Route/Verlauf/Spritbüchle → Preise
+});
+// Start in einem anderen Bereich als „Preise“: Verlaufseintrag anlegen, damit „Zurück“ erst nach „Preise“ führt
+if (tab !== "preise" && !tabState()) try { history.pushState({ t: 1 }, ""); } catch {}
 
 async function renderDetail() {
   const s = byId(detailId);

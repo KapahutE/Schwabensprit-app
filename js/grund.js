@@ -27,6 +27,14 @@ const store = {
   getJ(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
   setJ(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
+// Gerät erkennen: iPhone/iPad, Android oder anderes (Karten-Apps, Installationshinweis)
+function platformOf(ua, plat, touch) {
+  const ios = /iPhone|iPad|iPod/.test(ua) || (plat === "MacIntel" && touch > 1);   // iPad meldet sich oft als Mac
+  const android = !ios && /Android/.test(ua);
+  return { ios, android, apple: ios || (!android && /Mac/.test(plat || "")) };
+}
+const PLAT = platformOf(navigator.userAgent, navigator.platform, navigator.maxTouchPoints || 0);
+const isStandalone = () => navigator.standalone === true || ["standalone", "fullscreen", "minimal-ui"].some((m) => matchMedia(`(display-mode: ${m})`).matches);
 let fuel = store.get("fuel", "e5");
 let onlyOpen = store.get("onlyOpen", "0") === "1";
 let evMode = store.get("ev", "0") === "1";   // E-Modus: Ladestationen statt Tankstellen (js/strom.js)
@@ -159,7 +167,7 @@ function getPosition() {
   return new Promise((res, rej) => {
     if (!navigator.geolocation) return rej(new Error("Standort wird nicht unterstützt"));
     navigator.geolocation.getCurrentPosition((p) => res(p.coords), (e) =>
-      rej(new Error(e.code === 1 ? "Standortfreigabe abgelehnt – in den iPhone-Einstellungen erlauben" : "Standort nicht verfügbar")),
+      rej(new Error(e.code === 1 ? `Standortfreigabe abgelehnt – in den ${PLAT.ios ? "iPhone" : "Geräte"}-Einstellungen für ${PLAT.android ? "den Browser" : "diese App bzw. Safari"} erlauben` : "Standort nicht verfügbar")),
       { enableHighAccuracy: false, maximumAge: 300000, timeout: 15000 });
   });
 }
@@ -463,12 +471,26 @@ function changeCard(c, title, sub) {
 // ---- Bereiche (Leiste unten): Preise, Route, Verlauf, Tankbuch
 const TABS = ["preise", "route", "verlauf", "tankbuch"];
 let tab = TABS.includes(store.get("tab", "")) ? store.get("tab", "") : "preise";
+// Start über eine Verknüpfung (Android: Symbol lange drücken): ?tab=route, ?ev=1 (Ladestationen), ?ev=0 (Sprit)
+{
+  const q = new URLSearchParams(location.search);
+  if (TABS.includes(q.get("tab"))) { tab = q.get("tab"); store.set("tab", tab); }
+  if (q.has("ev")) { evMode = q.get("ev") === "1"; store.set("ev", evMode ? "1" : "0"); }
+  if (q.has("tab") || q.has("ev")) try { history.replaceState(null, "", location.pathname + location.hash); } catch {}
+}
 let showAll = false;          // Tankstellenliste: Top 10 oder alle
 const LIST_TOP = 10, LIST_MAX = 60;
-function setTab(t) {
+// Zurück-Taste/-Geste (Android, Safari): aus einem Bereich erst zurück zu „Preise“, dann erst raus aus der App.
+// Dafür liegt beim Wechsel weg von „Preise“ ein Eintrag {t:1} im Verlauf.
+const tabState = () => { try { return history.state?.t === 1; } catch { return false; } };
+function setTab(t, fromPop) {
   if (!TABS.includes(t)) return;
   if (t === tab) return window.scrollTo({ top: 0, behavior: "smooth" });   // nochmal tippen: nach oben
   tab = t; store.set("tab", t);
+  if (!fromPop) try {
+    if (t !== "preise" && !tabState()) history.pushState({ t: 1 }, "");
+    else if (t === "preise" && tabState()) history.back();
+  } catch {}
   if (view?.deferred && (t === "preise" || t === "verlauf")) load();   // Live-Preise erst jetzt holen
   render(); window.scrollTo(0, 0);
   if (t === "tankbuch") tbRecompute(false);
@@ -743,17 +765,36 @@ window.addEventListener("scroll", () => hideTips(), { passive: true });
 $("#detail").addEventListener("scroll", () => hideTips(), { passive: true });
 
 // ---- Route mit Google Maps: App, falls installiert, sonst Browser
+let navTo = (u) => { location.href = u; };   // (für Tests austauschbar)
+// Android: Maps-App per Intent öffnen; ist sie nicht da, nimmt Chrome die Webadresse (browser_fallback_url)
+const mapsIntent = (web) => { const u = new URL(web); return `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=com.google.android.apps.maps;S.browser_fallback_url=${encodeURIComponent(web)};end`; };
 function openRoute(s) {
   const dest = s.lat && s.lng ? `${s.lat},${s.lng}` : `${s.street}, ${s.place}`;
   const web = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}&travelmode=driving`;
+  if (PLAT.android) return navTo(mapsIntent(web));
+  if (!PLAT.ios) return void (window.open(web, "_blank") || navTo(web));
   let left = false;
   const onHide = () => { left = true; };
   document.addEventListener("visibilitychange", onHide, { once: true });
-  location.href = `comgooglemaps://?daddr=${encodeURIComponent(dest)}&directionsmode=driving`;
+  navTo(`comgooglemaps://?daddr=${encodeURIComponent(dest)}&directionsmode=driving`);
   setTimeout(() => {
     document.removeEventListener("visibilitychange", onHide);
-    if (!left && !document.hidden) window.open(web, "_blank") || (location.href = web);
+    if (!left && !document.hidden) window.open(web, "_blank") || navTo(web);
   }, 1200);
+}
+// Android: auch die „Google Maps“-Knöpfe (Links) öffnen die Maps-App
+document.addEventListener("click", (e) => {
+  if (!PLAT.android || e.defaultPrevented) return;
+  const a = e.target.closest?.('a[href^="https://www.google.com/maps/"]');
+  if (!a) return;
+  e.preventDefault(); navTo(mapsIntent(a.href));
+});
+// Zweiter Karten-Knopf: Apple Karten auf Apple-Geräten, auf Android „Andere Karten-App“ (geo:, Auswahl aller installierten Navi-Apps)
+function mapAlt(appleUrl, s) {
+  if (PLAT.apple) return `<a class="btn secondary" href="${esc(appleUrl)}" target="_blank" rel="noopener">Apple Karten</a>`;
+  if (!PLAT.android || s.lat == null) return "";
+  const ll = `${(+s.lat).toFixed(6)},${(+s.lng).toFixed(6)}`;
+  return `<a class="btn secondary" href="geo:${ll}?q=${ll}(${encodeURIComponent(String(s.brand || s.op || "Ziel").replace(/[()]/g, ""))})">Andere Karten-App</a>`;
 }
 
 // ---- Ortswahl
@@ -954,6 +995,7 @@ function openSettings() {
   $("#inKwh").value = fmtNum(parseFloat(String(store.get("kwh", "30")).replace(",", ".")) || 30, 0);
   $("#inEvCons").value = fmtNum(parseFloat(String(store.get("evcons", "18")).replace(",", ".")) || 18, 0);
   $("#testOut").innerHTML = "";
+  renderInstall();
   $("#dlg").returnValue = "";   // sonst gilt „Wischen/Esc“ nach einem früheren Speichern wieder als Speichern
   $("#dlg").showModal();
 }
@@ -993,7 +1035,7 @@ $("#btnGeoClear").addEventListener("click", () => {
 $("#btnTest").addEventListener("click", async () => {
   const r = $("#inRepo").value.trim(), t = $("#inToken").value.trim(), out = $("#testOut");
   const line = (ok, txt) => `${ok ? "✅" : "❌"} ${txt}<br>`;
-  const where = navigator.standalone ? "App vom Home-Bildschirm" : "Safari / Browser";
+  const where = isStandalone() ? "installierte App" : "Browser";
   let h = `Schlüssel …${esc(t.slice(-4)) || "(leer)"} · Repository ${esc(r) || "(leer)"} · ${where}<br>`;
   out.innerHTML = h + "Prüfe …";
   if (!r || !t) { out.innerHTML = h + line(false, "Repository und Schlüssel ausfüllen."); return; }
@@ -1092,3 +1134,26 @@ if ("serviceWorker" in navigator) {
     document.body.append(b);
   });
 }
+
+// ---- App installieren: Android/Chrome bietet den Knopf selbst an (beforeinstallprompt), auf dem iPhone gibt es nur die Anleitung
+let installEv = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEv = e; renderInstall(); });
+window.addEventListener("appinstalled", () => { installEv = null; renderInstall(); toast("App installiert ✓"); });
+function renderInstall() {
+  const done = isStandalone(), bar = $("#instBar"), box = $("#instBox");
+  bar.hidden = done || !installEv || store.get("instNo", "0") === "1";
+  $("#btnInstall").hidden = !installEv;
+  box.hidden = done || (!installEv && !PLAT.ios && !PLAT.android);
+  $("#instTxt").textContent = installEv ? "Startet wie eine App und auch ohne Netz."
+    : PLAT.ios ? "In Safari unten auf „Teilen“ tippen, dann „Zum Home-Bildschirm“ wählen."
+    : "Im Browser-Menü (⋮) „App installieren“ bzw. „Zum Startbildschirm hinzufügen“ wählen.";
+}
+async function installApp() {
+  if (!installEv) return;
+  const ev = installEv; installEv = null;   // ein Ereignis gilt nur einmal
+  try { await ev.prompt(); await ev.userChoice; } catch {}
+  renderInstall();
+}
+$("#btnInstall").addEventListener("click", () => { $("#dlg").close(); installApp(); });
+$("#btnInstBar").addEventListener("click", installApp);
+$("#btnInstNo").addEventListener("click", () => { store.set("instNo", "1"); $("#instBar").hidden = true; });

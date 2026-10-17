@@ -478,7 +478,7 @@ const Route = (() => {
     const isSaved = S.saved.some((x) => samePt(x.a, R.a) && samePt(x.b, R.b));
     const depTxt = S.depart && S.depart > Date.now() + SOON ? ` · ${say("Abfahrt", "Abfahrt")} ${esc(new Date(S.depart).toLocaleString("de-DE", { weekday: "short", hour: "2-digit", minute: "2-digit" }))}` : "";
     let h = `<section class="card rtsum" aria-live="polite"><span class="eyebrow">${say("Dei Strecke", "Deine Strecke")} · ${FUELS[fuel]} · ± ${S.corr} km</span>
-      <div class="big">${km(R.km).replace(",0 km", " km")} <span>≈ ${dur(Math.max(1, Math.round(R.sec / 60)))}${tripCost != null ? ` · Sprit ≈ ${eur2(tripCost)}` : ""}</span></div>
+      <div class="big">${km(R.km).replace(",0 km", " km")} <span>≈ ${dur(Math.max(1, Math.round(R.sec / 60)))}</span>${tripCost != null ? ` <span>· Sprit ≈ ${eur2(tripCost)}</span>` : ""}</div>
       <div class="sub">${esc(R.from)} → ${esc(R.to)}${depTxt} · ${list.length} ${list.length === 1 ? say("Tankstell", "Tankstelle") : say("Tankstella", "Tankstellen")} ${say("am Weg", "an der Strecke")}${oldest ? ` · Preise ${say("vom", "Stand")} ${esc(ago(oldest))}` : ""}</div>
       ${S.atBusy ? `<div class="sub rtat"><span class="spin-dot"></span> ${say("Preis vo Öschtrreich (E-Control) kommet …", "Preise aus Österreich (E-Control) werden geladen …")}</div>`
         : S.atErr && atPoints(R).length ? `<div class="sub rtat">🇦🇹 ${say("D'E-Control isch grad net z'erreicha – für Öschtrreich gibt's grad koine Preis.", "Die E-Control ist gerade nicht erreichbar – für Österreich gibt es gerade keine Preise.")}</div>`
@@ -597,7 +597,7 @@ const Route = (() => {
       <div class="sub">${esc(s.street)}, ${esc(s.place)} · ${later ? `${say("Ankunft", "Ankunft")} ≈ ${hm2(s.eta)} Uhr · ` : ""}${o ? (sch?.text ? esc(sch.text) : "geöffnet") : `${later ? say("dann zu", "dann geschlossen") : "geschlossen"}${sch?.short ? " · " + esc(sch.short) : ""}`}<br>
         ${say("Umweg", "Umweg")} ${s.exact ? `${km(s.detourKm)} · +${minTxt(s.detourMin)}` : `≈ ${km(s.detourKm)} (${say("gschätzt", "geschätzt")})`}${s.fillCost != null && has(s) ? ` · ${say("Tankfüllung inkl. Umweg", "Tankfüllung inkl. Umweg")} ${eur2(s.fillCost)}` : ""}</div>
       <div class="row"><a class="btn" href="${esc(gmaps(s))}" target="_blank" rel="noopener">${NAV} Tankstopp (Google Maps)</a>
-        <a class="btn secondary" href="${esc(apple(s))}" target="_blank" rel="noopener">Apple Karten</a>
+        ${mapAlt(apple(s), s)}
         <button class="btn secondary" data-rtmap="${esc(s.id)}">${say("Uff dr Kart", "Auf Karte")}</button>
         ${byId(s.id) ? `<button class="btn secondary" data-detail="${esc(s.id)}">Details</button>` : ""}</div></div>`;
   }

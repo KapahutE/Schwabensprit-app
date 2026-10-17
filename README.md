@@ -27,9 +27,20 @@ Leiste unten mit drei Bereichen:
 - **Content-Security-Policy** (Meta-Tag in `index.html`): Skripte nur aus der App und unpkg (Karte, mit Prüfsumme), Verbindungen nur zu den benötigten Diensten, keine Inline-Skripte. Wer in `endpoints.json` einen anderen Dienst einträgt, muss dessen Adresse auch in der Richtlinie ergänzen. Der Belegleser braucht `wasm-unsafe-eval` (iOS ab 16.4).
 - **Tank-Rat** (Preise, in „Wann tanken?“): Füllstand angeben (fast leer, ¼, ½, ¾, gilt 3 Tage) → Reichweite, „jetzt tanken“ oder „warten spart ≈ …“ aus Prognose und 12-Uhr-Regel. **Kosten je 100 km** im E-Modus: Ladepreis × Verbrauch (⚙ „E-Auto kWh/100 km“), dazu der Sprit-Vergleich.
 
+## iPhone und Android
+
+Eine App für beide Systeme (Progressive Web App, kein Store nötig):
+
+- **Installieren:** Android (Chrome, Samsung Internet): ⚙ Einstellungen → „App installieren“ (oder der Hinweis unten beim ersten Besuch, sonst Browser-Menü ⋮ → „App installieren“). iPhone: Safari → Teilen → „Zum Home-Bildschirm“. Symbole: `icon-192.png`/`icon-512.png`, `icon-maskable-512.png` (mit Rand für runde Android-Masken), `icon-mono-512.png` (einfarbig, Android 13+ Designsymbole), `apple-touch-icon.png`.
+- **Verknüpfungen (Android):** Symbol lange drücken → Spritpreise, Ladestationen, Route, Spritbüchle (`?tab=…&ev=…`, siehe `manifest.webmanifest`).
+- **Karten-Apps:** Google Maps auf beiden Systemen (Android öffnet die Maps-App per Intent, sonst die Webseite). iPhone/Mac zusätzlich Apple Karten; Android zusätzlich „Andere Karten-App“ (`geo:`, Auswahl aller installierten Navi-Apps).
+- **Zurück-Taste/-Geste:** schließt zuerst Detailansicht und Report, führt aus Route/Verlauf/Spritbüchle zurück zu „Preise“, erst dann verlässt sie die App.
+- Android: aktuelles Chrome oder Samsung Internet; iPhone: iOS ab 16.4 (wegen des Belegelesers).
+- Eine Version für den Google Play Store wäre möglich (Trusted Web Activity, z. B. mit Bubblewrap), braucht aber ein Entwicklerkonto – für den Eigengebrauch nicht nötig.
+
 ## Tests
 
-`node tests/unit.js` (ohne Browser: Streckengeometrie, Belegleser, Spritbüchle-Verbrauch, Ladekarte, E-Modus-Logik) und `node tests/e2e.js` (Chromium mit Playwright, feste Testdaten in `tests/fixtures/`, nachgestellte Dienste; Abläufe in Preise, E-Modus, Ladekarte, Route, Spritbüchle, Belegleser, CSP, Tippflächen, Offline-Start). Vorbereitung: `cd tests && npm install && npx playwright install chromium`. Bei jedem Push laufen beide in GitHub Actions (`.github/workflows/tests.yml`).
+`node tests/unit.js` (ohne Browser: Streckengeometrie, Belegleser, Spritbüchle-Verbrauch, Ladekarte, E-Modus-Logik) und `node tests/e2e.js` (Chromium mit Playwright, Standard iPhone 13; `DEVICE="Pixel 7" node tests/e2e.js` für Android, feste Testdaten in `tests/fixtures/`, nachgestellte Dienste; Abläufe in Preise, E-Modus, Ladekarte, Route, Spritbüchle, Belegleser, CSP, Tippflächen, Offline-Start). Vorbereitung: `cd tests && npm install && npx playwright install chromium`. Bei jedem Push laufen beide in GitHub Actions (`.github/workflows/tests.yml`).
 
 ## Dateien
 
@@ -53,7 +64,7 @@ Leiste unten mit drei Bereichen:
 
 Die Skripte sind klassische Skripte ohne Build-Schritt und teilen sich den globalen Gültigkeitsbereich – die Reihenfolge in `index.html` zählt (`grund.js` zuerst).
 
-Nach Änderungen an CSS/JS die Versionsnummer erneuern, damit iPhones nicht alte Dateien aus dem Zwischenspeicher nehmen:
+Nach Änderungen an CSS/JS die Versionsnummer erneuern, damit Handys nicht alte Dateien aus dem Zwischenspeicher nehmen:
 
 ```sh
 v=$(cat app.css js/*.js | sha1sum | cut -c1-8); sed -i -E "s/\?v=[0-9a-f]+/?v=$v/g" index.html

@@ -1,9 +1,9 @@
 // Schwabensprit – Service Worker: Sofortstart und Betrieb ohne Netz für die App-Dateien.
 //  • Startseite (index.html): sofort aus dem Speicher, im Hintergrund auf Neues prüfen; gibt es eine neue Version, meldet der
 //    Worker das der App („Neue Version bereit“) – so bleibt der Start schnell und Updates kommen trotzdem an.
-//  • js/, app.css, Symbole: je Version (?v=…) unveränderlich → aus dem Speicher; ocr/ (Belegleser, 13 MB) bei erster Nutzung.
+//  • js/ und app.css: je Version (?v=…) unveränderlich → aus dem Speicher; Manifest und Symbole (ohne Versionsnummer): Netz zuerst, sonst Speicher; ocr/ (Belegleser, 13 MB) bei erster Nutzung.
 //  • Preisdaten (data/, reports/) und fremde Dienste gehen immer am Worker vorbei; für „kein Netz“ sorgt die App selbst (IndexedDB).
-const VERSION = "1";
+const VERSION = "2";
 const SHELL = "sw-shell-" + VERSION, FILES = "sw-files-" + VERSION, OCR = "sw-ocr-" + VERSION, MAX_FILES = 90;
 const INDEX = new URL("./", self.registration.scope).href;
 
@@ -19,7 +19,7 @@ self.addEventListener("fetch", (e) => {
   const p = u.pathname;
   if (/\/(data|reports)\//.test(p)) return;
   if (r.mode === "navigate" || p.endsWith("/") || p.endsWith("/index.html")) return e.respondWith(page(e));
-  if (p.endsWith("/endpoints.json")) return e.respondWith(networkFirst(r));
+  if (p.endsWith("/endpoints.json") || (/\.(webmanifest|png|svg)$/.test(p) && !p.includes("/ocr/"))) return e.respondWith(networkFirst(r));   // Manifest und Symbole haben keine Versionsnummer
   e.respondWith(cacheFirst(r));
 });
 

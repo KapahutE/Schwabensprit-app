@@ -23,5 +23,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Unit-Tests
         run: node tests/unit.js
-      - name: Browser-Tests
+      - name: Browser-Tests (iPhone)
         run: node tests/e2e.js
+      - name: Browser-Tests (Android)
+        run: DEVICE="Pixel 7" node tests/e2e.js
