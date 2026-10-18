@@ -285,7 +285,7 @@ async function instantView(seq) {
   if (!cl?.d?.stations || view || seq !== loadSeq) { bases = had; return; }
   const id = src.base.id;
   baseCache[id] ||= { latest: cl.d, reports: [], history: null, changes: null, forecast: null };
-  view = { ...buildView(c, src, cl.d, []), cachedAt: cl.at };
+  view = { ...buildView(c, src, cl.d, []), cachedAt: cl.at, provisional: true };   // vorläufig: bis die frischen Daten da sind
   render();
   // „Wann tanken?“, Verlauf und Prognose ebenfalls sofort – nur wenn sie zum gespeicherten Preisstand gehören
   const [h, ch, fc] = await Promise.all(["history", "changes", "forecast"].map((n) => kv.get(`d:data/${id}/${n}.json`)));
@@ -898,7 +898,7 @@ $("#btnLocDone").addEventListener("click", () => $("#dlgLoc").close());
 $("#dlgLoc").addEventListener("close", () => { if (locChanged) load(); });
 
 // ---- Statusmeldung: veraltete Daten oder hängende/fehlgeschlagene Läufe bei GitHub
-let healthHtml = "", healthAt = 0;
+let healthHtml = "", healthAt = 0, healthKey = "";
 const minsAgo = (iso) => Math.round((Date.now() - new Date(iso)) / 60000);
 async function lastRun(repoName, workflow, auth) {
   const r = await fetch(`https://api.github.com/repos/${repoName}/actions/workflows/${workflow}/runs?per_page=3`, {
@@ -920,16 +920,24 @@ function describe(runs, what) {
   return null;
 }
 async function checkHealth(force) {
-  if (!view || view.error || view.live) { healthHtml = ""; return; }
-  if (!force && Date.now() - healthAt < 120000) return paintHealth();
-  healthAt = Date.now();
+  if (!view || view.error || view.live) { healthHtml = ""; healthKey = ""; return; }
+  // gespeicherter Stand beim Start: erst beurteilen, wenn die frischen Daten da sind (sonst falscher Alarm „29 Std. alt“)
+  if (view.provisional) { healthHtml = ""; healthKey = ""; return paintHealth(); }
+  const key = `${view.updated}|${view.cachedAt ? 1 : 0}`;   // anderer Stand → neu beurteilen, auch innerhalb der Wartezeit
+  if (!force && key === healthKey && Date.now() - healthAt < 120000) return paintHealth();
+  healthAt = Date.now(); healthKey = key;
   const msgs = [];
-  const age = view.updated ? minsAgo(view.updated) : null;
-  if (age != null && age > 35) msgs.push(`Die Preise sind ${age >= 120 ? `${Math.round(age / 60)} Std.` : `${age} Min.`} alt – normalerweise kommt alle 15 Minuten ein neuer Abruf.`);
+  const age = view.updated ? minsAgo(view.updated) : null, ageTxt = age >= 120 ? `${Math.round(age / 60)} Std.` : `${age} Min.`;
+  // GitHub startet den Abruf nur etwa alle 30 Min. (Abstände bis ca. 45 Min. kommen vor) → erst ab 60 Min. auffällig
+  const stale = age != null && age > 60;
+  if (view.cachedAt) {
+    // Die frischen Preise ließen sich nicht laden (kein Netz, GitHub gestört): das liegt nicht am Preisabruf
+    if (age != null && age > 35) msgs.push(`Gezeigt wird der gespeicherte Stand (${ageTxt} alt) – die aktuellen Preise konnten gerade nicht geladen werden (kein Netz oder GitHub nicht erreichbar).`);
+  } else if (stale) msgs.push(`Die Preise sind ${ageTxt} alt – normalerweise kommt etwa alle halbe Stunde ein neuer Abruf.`);
   try {
     // Zum Preisabruf nur etwas sagen, wenn die Preise wirklich veraltet sind – eine hängende
     // oder ersetzte Veröffentlichung der Webseite allein ist kein Problem für die App.
-    if (age != null && age > 35 && token() && repo()) {
+    if (stale && !view.cachedAt && token() && repo()) {
       const m = describe(await lastRun(repo(), "tankpreise.yml", token()), "Der Preisabruf");
       if (m) msgs.push(m);
     }
@@ -939,13 +947,17 @@ async function checkHealth(force) {
       if (m) msgs.push(m);
     }
   } catch {}
+  if (key !== healthKey) return;   // inzwischen anderer Stand: diese Antwort ist überholt
   healthHtml = msgs.length ? `<div class="card notice warnbox"><span class="ic">⚠️</span><div><b>Hinweis zur Aktualisierung</b><br>${msgs.map(esc).join("<br>")}
     <div class="row" style="margin-top:10px"><a class="btn secondary" href="https://github.com/${esc(repo())}/actions" target="_blank" rel="noopener">Bei GitHub ansehen</a>
-    ${token() ? `<button class="btn" id="btnRetry">Abruf neu starten</button>` : ""}</div></div></div>` : "";
+    ${view.cachedAt ? `<button class="btn" id="btnReload">Erneut laden</button>` : token() ? `<button class="btn" id="btnRetry">Abruf neu starten</button>` : ""}</div></div></div>` : "";
   paintHealth();
 }
 function paintHealth() { const el = $("#health"); if (el && el.innerHTML !== healthHtml) el.innerHTML = healthHtml; }
-document.addEventListener("click", (e) => { if (e.target.closest("#btnRetry")) { healthAt = 0; dispatch("abrufen"); } });
+document.addEventListener("click", (e) => {
+  if (e.target.closest("#btnRetry")) { healthAt = 0; dispatch("abrufen"); }
+  else if (e.target.closest("#btnReload")) { healthAt = 0; load(true); }
+});
 
 // ---- Abruf bei GitHub starten (Knopf ↻)
 async function dispatch(aktion) {

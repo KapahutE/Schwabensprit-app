@@ -12,13 +12,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const DEVICE = process.env.DEVICE || "iPhone 13", ANDROID = /Android/.test(devices[DEVICE].userAgent);
   const ctx = await browser.newContext({ ...devices[DEVICE], timezoneId: "Europe/Berlin", locale: "de-DE", serviceWorkers: "allow" });
   const bases = fixture("bases.json"), latest = fixture("latest-H.json"), EVL = fixture("ev-locations.json"), EVT = fixture("ev-tariffs.json"), OSRM = JSON.stringify(fixture("route-stgt-ulm.json"));
-  const state = { offline: false, loc: 0, csp: [] };
+  const state = { offline: false, loc: 0, csp: [], updMin: 5, delay: 0, fail: false };
+  const stamp = (min) => new Date(Date.now() - min * 60000).toLocaleString("sv-SE", { timeZone: "Europe/Berlin" }).replace(" ", "T");   // wie „updated“ in den Daten (Berliner Zeit)
   const H = { "access-control-allow-origin": "*" }, J = { ...H, "content-type": "application/json" };
   await ctx.route(/api\.github\.com/, async (r) => {
     if (state.offline) return r.abort("internetdisconnected");
     const u = r.request().url(), m = u.match(/contents\/docs\/(.*?)\?/);
     if (!m) return r.fulfill({ status: 200, headers: J, body: JSON.stringify({ workflow_runs: [] }) });
-    const f = { "data/bases.json": bases, "data/H/latest.json": latest, "data/H/reports.json": [] }[m[1]];
+    if (m[1] === "data/H/latest.json") { if (state.fail) return r.fulfill({ status: 500, headers: H, body: "{}" }); if (state.delay) await sleep(state.delay); }
+    const f = { "data/bases.json": bases, "data/H/latest.json": { ...latest, updated: stamp(state.updMin) }, "data/H/reports.json": [] }[m[1]];
     f ? r.fulfill({ status: 200, headers: J, body: JSON.stringify(f) }) : r.fulfill({ status: 404, headers: H, body: "{}" });
   });
   await ctx.route(/api\.mobidata-bw\.de/, (r) => {
@@ -207,6 +209,32 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     check(`Schmale Bildschirme (${W.join(", ")} px): kein seitliches Scrollen in allen Bereichen`, widths.length === 0, widths);
     await p.setViewportSize(devices[DEVICE].viewport);
     await p.click("#tabbar [data-tab=preise]"); await p.click("#seg [data-f=ev]"); await p.waitForSelector("#evBody .list .rtitem", T);
+
+    // ---- Hinweis zur Aktualisierung: der gespeicherte Stand beim Start darf keinen Alarm auslösen
+    const health = (pg) => pg.evaluate(() => document.querySelector("#health")?.innerText.replace(/\s+/g, " ").trim() || "");
+    const seedOld = () => p.evaluate(async (old) => { const c = await kv.get("d:data/H/latest.json"); await kv.set("d:data/H/latest.json", { at: Date.now() - 29 * 3600e3, d: { ...c.d, updated: old } }); }, stamp(29 * 60));
+    const open3 = async (setup) => { await setup(); const pg = await ctx.newPage(); await pg.goto(srv.url); await pg.waitForSelector("#main .hero .price", T); return pg; };
+    await seedOld(); state.delay = 2500;
+    const p3 = await open3(async () => {});
+    const stand1 = await p3.innerText("#stand"); await p3.waitForTimeout(300); const h1 = await health(p3);
+    await p3.waitForFunction(() => !/Gespeichert/.test(document.querySelector("#stand")?.textContent || ""), null, T); await p3.waitForTimeout(600); const h2 = await health(p3);
+    check("Hinweis: beim Start steht der gespeicherte Stand (29 Std.) ohne Alarm da", /Gespeichert/.test(stand1) && h1 === "", { stand1, h1 });
+    check("Hinweis: nach den frischen Daten kein „Preise sind … alt“", h2 === "", h2);
+    await p3.close(); state.delay = 0;
+
+    await seedOld(); state.fail = true;
+    const p4 = await open3(async () => {}); await p4.waitForTimeout(600); const h3 = await health(p4);
+    check("Hinweis: Abruf schlägt fehl → „gespeicherter Stand“, ohne Vorwurf an den Preisabruf und ohne „Abruf neu starten“", /gespeicherte Stand/.test(h3) && !/normalerweise/.test(h3) && (await p4.$("#btnRetry")) === null && (await p4.$("#btnReload")) !== null, h3);
+    await p4.close(); state.fail = false;
+
+    state.updMin = 180; const p5 = await open3(async () => {}); await p5.waitForTimeout(600); const h4 = await health(p5);
+    check("Hinweis: Preise wirklich 3 Std. alt → Hinweis mit „Abruf neu starten“", /3 Std\. alt/.test(h4) && (await p5.$("#btnRetry")) !== null, h4);
+    await p5.close();
+
+    state.updMin = 45; const p6 = await open3(async () => {}); await p6.waitForTimeout(600); const h5 = await health(p6);
+    check("Hinweis: 45 Min. alt (GitHub startet nur etwa alle 30 Min.) ist noch normal", h5 === "", h5);
+    await p6.close(); state.updMin = 5;
+    await p.evaluate(() => { localStorage.setItem("ev", "1"); localStorage.setItem("tab", "preise"); });   // die Seiten oben haben die gemeinsamen Einstellungen zurückgesetzt
 
     // ---- Service Worker: Offline-Start
     await p.evaluate(() => navigator.serviceWorker.ready); await p.reload(); await p.waitForSelector("#evBody .list .rtitem", T); await p.waitForTimeout(800);
