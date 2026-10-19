@@ -1,7 +1,7 @@
 /* Schwabensprit – Farben als Rollen. Gold = Bedienung, Blau/Grau/Rot = Preisniveau (günstig/mittel/teuer). */
 :root{
   color-scheme:light;
-  --bg:#f2f2f7;--bg-a:rgba(242,242,247,.82);--card:#fff;--card2:#f6f6f8;--fg:#1c1c1e;--muted:#6e6e73;--line:#e5e5ea;--seg:#e3e3e8;
+  --bg:#f2f2f7;--bg-a:rgba(242,242,247,.82);--bar:rgba(242,242,247,.96);--card:#fff;--card2:#f6f6f8;--fg:#1c1c1e;--muted:#6e6e73;--line:#e5e5ea;--seg:#e3e3e8;
   --acc:#f2b300;--acc-ink:#8a5b00;--on-acc:#1b1300;--acc-glow:rgba(242,179,0,.22);
   --lo:#2a78d6;--mid:#898781;--hi:#e34948;
   --lo-bg:rgba(42,120,214,.12);--mid-bg:rgba(137,135,129,.14);--hi-bg:rgba(227,73,72,.12);
@@ -10,13 +10,13 @@
 }
 @media (prefers-color-scheme:dark){:root{
   color-scheme:dark;
-  --bg:#000;--bg-a:rgba(0,0,0,.72);--card:#1c1c1e;--card2:#2c2c2e;--fg:#f2f2f7;--muted:#98989f;--line:#2c2c2e;--seg:#2c2c2e;
+  --bg:#000;--bg-a:rgba(0,0,0,.72);--bar:rgba(0,0,0,.95);--card:#1c1c1e;--card2:#2c2c2e;--fg:#f2f2f7;--muted:#98989f;--line:#2c2c2e;--seg:#2c2c2e;
   --acc:#f5b800;--acc-ink:#f5b800;--on-acc:#1b1300;--acc-glow:rgba(245,184,0,.16);
   --lo:#3987e5;--mid:#898781;--hi:#e66767;
   --lo-bg:rgba(57,135,229,.22);--mid-bg:rgba(137,135,129,.22);--hi-bg:rgba(230,103,103,.22);
   --grid:#2c2c2a;--axis:#383835;--shadow:none;
 }}
-html{overscroll-behavior-y:contain}
+@supports not (-webkit-touch-callout:none){html{overscroll-behavior-y:contain}}   /* nicht auf iOS */
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--fg)}
 body{font:16px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased;
@@ -48,8 +48,7 @@ button{font:inherit;border:0;cursor:pointer;color:inherit;background:none}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(12,163,12,.45)}70%{box-shadow:0 0 0 7px rgba(12,163,12,0)}100%{box-shadow:0 0 0 0 rgba(12,163,12,0)}}
 
 /* Sortenwahl bleibt beim Scrollen oben */
-.sticky{position:sticky;top:0;z-index:20;margin:8px -16px 6px;padding:8px 16px;background:var(--bg-a);
-  -webkit-backdrop-filter:saturate(180%) blur(18px);backdrop-filter:saturate(180%) blur(18px)}
+.sticky{position:sticky;top:0;z-index:20;margin:8px -16px 6px;padding:8px 16px;background:var(--bar)}
 .seg{display:flex;background:var(--seg);border-radius:11px;padding:2px}
 .seg button{flex:1;padding:7px 0;border-radius:9px;font-size:15px;font-weight:650;color:var(--muted);white-space:nowrap}
 .seg button.on{background:var(--card);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.14)}
@@ -196,8 +195,8 @@ select{width:100%;font:inherit;font-size:16px;padding:11px 12px;border-radius:11
 .morebtn:active{background:var(--card2)}
 
 /* Leiste unten: Preise · Verlauf · Tankbuch */
-.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:22;background:var(--bg-a);border-top:1px solid var(--line);
-  -webkit-backdrop-filter:saturate(180%) blur(18px);backdrop-filter:saturate(180%) blur(18px);padding:6px 8px calc(env(safe-area-inset-bottom) + 4px)}
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:22;background:var(--bar);border-top:1px solid var(--line);padding:6px 8px calc(env(safe-area-inset-bottom) + 4px);
+  transform:translateZ(0);will-change:transform}   /* eigene Ebene, ohne Weichzeichner: bleibt beim schnellen Scrollen am Rand (iOS) */
 .tabbar .in{display:flex;max-width:640px;margin:0 auto}
 .tabbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:3px 0 2px;font-size:11px;font-weight:600;color:var(--muted)}
 .tabbar svg{width:25px;height:25px}

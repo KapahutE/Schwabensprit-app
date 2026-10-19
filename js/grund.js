@@ -1005,7 +1005,7 @@ function openSettings() {
   $("#inKwh").value = fmtNum(parseFloat(String(store.get("kwh", "30")).replace(",", ".")) || 30, 0);
   $("#inEvCons").value = fmtNum(parseFloat(String(store.get("evcons", "18")).replace(",", ".")) || 18, 0);
   $("#testOut").innerHTML = "";
-  renderInstall();
+  renderInstall(); vpDiag();
   $("#dlg").returnValue = "";   // sonst gilt „Wischen/Esc“ nach einem früheren Speichern wieder als Speichern
   $("#dlg").showModal();
 }
@@ -1166,3 +1166,31 @@ async function installApp() {
 $("#btnInstall").addEventListener("click", () => { $("#dlg").close(); installApp(); });
 $("#btnInstBar").addEventListener("click", installApp);
 $("#btnInstNo").addEventListener("click", () => { store.set("instNo", "1"); $("#instBar").hidden = true; });
+
+// ---- iPhone (installierte App): Nach der Tastatur bleibt der Anzeigebereich manchmal gegenüber der Seite versetzt (bekannter
+// WebKit-Fehler, visualViewport.offsetTop springt nicht zurück). Dann sitzen die Leiste unten und die Sortenwahl oben mitten im Bild.
+// Sobald kein Eingabefeld mehr aktiv ist und ein Versatz bleibt, wird die Lage neu berechnet.
+const vpStat = { heals: 0, maxOff: 0 };
+function vpHeal() {
+  const vv = window.visualViewport;
+  if (!PLAT.ios || !isStandalone() || !vv || vv.scale > 1.01) return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "")) return;   // Tastatur noch offen
+  const off = Math.abs(vv.offsetTop);
+  vpStat.maxOff = Math.max(vpStat.maxOff, off);
+  if (off < 2) return;
+  vpStat.heals++;
+  const x = window.scrollX, y = window.scrollY, bar = $("#tabbar");
+  bar.style.display = "none"; void bar.offsetHeight; bar.style.display = "";   // zwingt WebKit zur neuen Berechnung der festen Elemente
+  window.scrollTo(x, y + 1); window.scrollTo(x, y);
+}
+let vpTimer = 0;
+const vpSoon = (ms) => { clearTimeout(vpTimer); vpTimer = setTimeout(vpHeal, ms); };
+window.visualViewport?.addEventListener("resize", () => vpSoon(250));
+window.visualViewport?.addEventListener("scroll", () => vpSoon(400));
+document.addEventListener("focusout", () => { vpSoon(200); setTimeout(vpHeal, 900); });
+document.addEventListener("visibilitychange", () => vpSoon(300));
+window.addEventListener("pageshow", () => vpSoon(300));
+function vpDiag() {
+  const vv = window.visualViewport, n = (v) => Math.round(v);
+  $("#vpDiag").textContent = `Fenster ${innerWidth}×${innerHeight}${vv ? ` · sichtbar ${n(vv.width)}×${n(vv.height)} · Versatz ${n(vv.offsetTop)} px (größter ${n(vpStat.maxOff)}) · Zoom ${vv.scale.toFixed(2)}` : ""} · ${isStandalone() ? "installierte App" : "Browser"} · Korrekturen ${vpStat.heals}`;
+}

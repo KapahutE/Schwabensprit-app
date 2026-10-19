@@ -234,6 +234,27 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     state.updMin = 45; const p6 = await open3(async () => {}); await p6.waitForTimeout(600); const h5 = await health(p6);
     check("Hinweis: 45 Min. alt (GitHub startet nur etwa alle 30 Min.) ist noch normal", h5 === "", h5);
     await p6.close(); state.updMin = 5;
+    // ---- Leiste unten und Sortenwahl: ohne Weichzeichner; Korrektur bei versetztem Anzeigebereich (nur iPhone, installierte App)
+    const css = await p.evaluate(() => { const g = (q) => { const e = document.querySelector(q); return e ? getComputedStyle(e) : null; }; return { bar: g("#tabbar")?.backdropFilter, sticky: g(".sticky")?.backdropFilter, will: g("#tabbar")?.willChange }; });
+    check("Anzeige: Leiste unten und Sortenwahl ohne Weichzeichner, Leiste mit eigener Ebene (iOS löst sie sonst beim Scrollen)", css.bar === "none" && css.sticky === "none" && /transform/.test(css.will), css);
+    const p7 = await ctx.newPage();
+    await p7.addInitScript(() => Object.defineProperty(navigator, "standalone", { get: () => true }));
+    await p7.goto(srv.url); await p7.waitForSelector("#main .hero .price", T);
+    await p7.evaluate(() => window.scrollTo(0, 400)); await p7.waitForTimeout(250);
+    const y0 = await p7.evaluate(() => Math.round(scrollY));
+    const vp = async (setup) => { await p7.evaluate(setup); await p7.evaluate(() => visualViewport.dispatchEvent(new Event("resize"))); await p7.waitForTimeout(550); return p7.evaluate(() => ({ heals: vpStat.heals, y: Math.round(scrollY), bar: getComputedStyle(document.querySelector("#tabbar")).display })); };
+    const v0 = await vp(() => {});
+    const v1 = await vp(() => Object.defineProperty(visualViewport, "offsetTop", { get: () => 297, configurable: true }));
+    check(ANDROID ? "Anzeige (Android): versetzter Anzeigebereich löst keine iPhone-Korrektur aus" : "Anzeige (iPhone, installiert): bleibt der Anzeigebereich um 297 px versetzt, wird die Lage neu berechnet, Scrollstand bleibt",
+      ANDROID ? v1.heals === 0 : v0.heals === 0 && v1.heals === 1 && v1.y === y0 && v1.bar !== "none", { y0, v0, v1 });
+    const v2 = await vp(() => Object.defineProperty(visualViewport, "scale", { get: () => 2, configurable: true }));
+    const v3 = await vp(() => { Object.defineProperty(visualViewport, "scale", { get: () => 1, configurable: true }); const i = document.createElement("input"); i.id = "tmpIn"; document.body.append(i); i.focus(); });
+    check("Anzeige: bei Zoom oder offener Tastatur keine Korrektur", v2.heals === v1.heals && v3.heals === v1.heals, { v1, v2, v3 });
+    await p7.evaluate(() => document.querySelector("#tmpIn").remove());
+    await p7.click("#btnSettings"); await p7.waitForTimeout(150);
+    const diag = await p7.evaluate(() => document.querySelector("#vpDiag").textContent);
+    check("Einstellungen: Anzeige-Diagnose zeigt Fenster, Versatz, Zoom und Korrekturen", /Fenster \d+×\d+/.test(diag) && /Versatz/.test(diag) && /installierte App/.test(diag) && /Korrekturen \d/.test(diag), diag);
+    await p7.close();
     await p.evaluate(() => { localStorage.setItem("ev", "1"); localStorage.setItem("tab", "preise"); });   // die Seiten oben haben die gemeinsamen Einstellungen zurückgesetzt
 
     // ---- Service Worker: Offline-Start
