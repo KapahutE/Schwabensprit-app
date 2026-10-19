@@ -210,6 +210,26 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await p.setViewportSize(devices[DEVICE].viewport);
     await p.click("#tabbar [data-tab=preise]"); await p.click("#seg [data-f=ev]"); await p.waitForSelector("#evBody .list .rtitem", T);
 
+    // ---- Ebenen: Karten (Leaflet, Ebenen bis 1000) dürfen nicht über die Leiste unten und die Sortenwahl oben reichen
+    const layers = (sel) => p.evaluate(async (sel) => {
+      const map = document.querySelector(sel), h = innerHeight, wait = () => new Promise((r) => setTimeout(r, 250));
+      const top = (x, y, q) => document.elementFromPoint(x, y)?.closest(q) != null;
+      window.scrollBy(0, map.getBoundingClientRect().top - (h - 200)); await wait();          // Karte reicht unter die Leiste unten
+      const bar = top(innerWidth / 2, h - 14, "#tabbar");
+      window.scrollBy(0, map.getBoundingClientRect().bottom - 12); await wait();               // Karte reicht unter die Sortenwahl oben
+      const sticky = top(innerWidth / 2, 30, ".sticky");
+      window.scrollTo(0, 0); return { bar, sticky, isolated: [...document.querySelectorAll(".leaflet-container")].every((e) => getComputedStyle(e).isolation === "isolate") };
+    }, sel);
+    await p.click("#evBody [data-evview='map']"); await p.waitForSelector("#evmap .leaflet-marker-icon", { state: "attached", ...T }); await p.waitForTimeout(300);
+    const l1 = await layers("#evmap");
+    await p.click("#evBody [data-evview='list']");
+    await p.click("#seg [data-f=e5]"); await p.waitForSelector("#main .hero .price", T);
+    await p.click("#main [data-view='map']"); await p.waitForSelector("#map .leaflet-marker-icon", { state: "attached", ...T }); await p.waitForTimeout(300);
+    const l2 = await layers("#map");
+    check("Ebenen: Karte (E-Modus) liegt unter Leiste unten und Sortenwahl", l1.bar && l1.sticky && l1.isolated, l1);
+    check("Ebenen: Karte (Preise) liegt unter Leiste unten und Sortenwahl", l2.bar && l2.sticky && l2.isolated, l2);
+    await p.click("#main [data-view='list']"); await p.click("#seg [data-f=ev]"); await p.waitForSelector("#evBody .list .rtitem", T);
+
     // ---- Hinweis zur Aktualisierung: der gespeicherte Stand beim Start darf keinen Alarm auslösen
     const health = (pg) => pg.evaluate(() => document.querySelector("#health")?.innerText.replace(/\s+/g, " ").trim() || "");
     const seedOld = () => p.evaluate(async (old) => { const c = await kv.get("d:data/H/latest.json"); await kv.set("d:data/H/latest.json", { at: Date.now() - 29 * 3600e3, d: { ...c.d, updated: old } }); }, stamp(29 * 60));
