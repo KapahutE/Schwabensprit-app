@@ -366,7 +366,7 @@ function schedule(s, now = new Date()) {
     if (b - a >= 1440) return { open: true, text: "24 h geöffnet", short: "24 h" };
     return { open: true, text: `geöffnet bis ${fmtHM(b % 1440 || 1440)}`, short: `bis ${fmtHM(b % 1440 || 1440)}` };
   }
-  for (const [a, b] of iv((wd + 6) % 7)) if (b > 1440 && t < b - 1440)
+  for (const [, b] of iv((wd + 6) % 7)) if (b > 1440 && t < b - 1440)
     return { open: true, text: `geöffnet bis ${fmtHM(b - 1440)}`, short: `bis ${fmtHM(b - 1440)}` };
   for (let k = 0; k < 7; k++) {
     const d = (wd + k) % 7;
@@ -928,8 +928,8 @@ async function checkHealth(force) {
   healthAt = Date.now(); healthKey = key;
   const msgs = [];
   const age = view.updated ? minsAgo(view.updated) : null, ageTxt = age >= 120 ? `${Math.round(age / 60)} Std.` : `${age} Min.`;
-  // GitHub startet den Abruf nur etwa alle 30 Min. (Abstände bis ca. 45 Min. kommen vor) → erst ab 60 Min. auffällig
-  const stale = age != null && age > 60;
+  // GitHub startet den Abruf nur etwa alle 30 Min. (Median 29, in 42 Std. bis zu 57 Min.) → erst ab 90 Min. auffällig
+  const stale = age != null && age > 90;
   if (view.cachedAt) {
     // Die frischen Preise ließen sich nicht laden (kein Netz, GitHub gestört): das liegt nicht am Preisabruf
     if (age != null && age > 35) msgs.push(`Gezeigt wird der gespeicherte Stand (${ageTxt} alt) – die aktuellen Preise konnten gerade nicht geladen werden (kein Netz oder GitHub nicht erreichbar).`);
@@ -977,7 +977,7 @@ async function dispatch(aktion) {
     }[r.status] || `GitHub-Fehler ${r.status}`);
     toast(aktion === "report" ? say("Dr Wochenreport wird gmacht – dauert a Minütle oder zwoi.", "Wochenreport wird erstellt – dauert ca. 1–2 Minuten.")
       : say("Abruf läuft – in 1–2 Minuta gibt's frische Preis.", "Abruf gestartet – neue Preise in ca. 1–2 Minuten."), 0);
-    const before = JSON.stringify(bases.map((b) => b.updated)), beforeRep = view?.reports?.length;
+    const before = JSON.stringify(bases.map((b) => b.updated));
     for (let i = 0; i < 24; i++) {
       await new Promise((res) => setTimeout(res, 15000));
       try {
@@ -1171,6 +1171,7 @@ $("#btnInstNo").addEventListener("click", () => { store.set("instNo", "1"); $("#
 // WebKit-Fehler, visualViewport.offsetTop springt nicht zurück). Dann sitzen die Leiste unten und die Sortenwahl oben mitten im Bild.
 // Sobald kein Eingabefeld mehr aktiv ist und ein Versatz bleibt, wird die Lage neu berechnet.
 const vpStat = { heals: 0, maxOff: 0 };
+const appVersion = () => (document.querySelector('script[src*="grund.js"]')?.src.match(/\?v=([0-9a-f]+)/) || [])[1] || "?";   // Nummer aus index.html
 function vpHeal() {
   const vv = window.visualViewport;
   if (!PLAT.ios || !isStandalone() || !vv || vv.scale > 1.01) return;
@@ -1192,5 +1193,5 @@ document.addEventListener("visibilitychange", () => vpSoon(300));
 window.addEventListener("pageshow", () => vpSoon(300));
 function vpDiag() {
   const vv = window.visualViewport, n = (v) => Math.round(v);
-  $("#vpDiag").textContent = `Fenster ${innerWidth}×${innerHeight}${vv ? ` · sichtbar ${n(vv.width)}×${n(vv.height)} · Versatz ${n(vv.offsetTop)} px (größter ${n(vpStat.maxOff)}) · Zoom ${vv.scale.toFixed(2)}` : ""} · ${isStandalone() ? "installierte App" : "Browser"} · Korrekturen ${vpStat.heals}`;
+  $("#vpDiag").textContent = `Version ${appVersion()} · Fenster ${innerWidth}×${innerHeight}${vv ? ` · sichtbar ${n(vv.width)}×${n(vv.height)} · Versatz ${n(vv.offsetTop)} px (größter ${n(vpStat.maxOff)}) · Zoom ${vv.scale.toFixed(2)}` : ""} · ${isStandalone() ? "installierte App" : "Browser"} · Korrekturen ${vpStat.heals}`;
 }

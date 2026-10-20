@@ -2,7 +2,7 @@
 // Env: DEVICE = Gerät aus Playwright (Standard "iPhone 13"; "Pixel 7" für Android)
 //      LEAFLET_DIR = lokale Kopie von leaflet@1.9.4/dist (sonst wird unpkg wirklich abgerufen)
 "use strict";
-const { check, done, fixture, playwright, serve, ROOT } = require("./lib.js");
+const { check, done, fixture, playwright, serve } = require("./lib.js");
 const fs = require("fs"), path = require("path");
 const hv = (a, b, c, d) => { const p = Math.PI / 180, x = Math.sin((c - a) * p / 2) ** 2 + Math.cos(a * p) * Math.cos(c * p) * Math.sin((d - b) * p / 2) ** 2; return 12742 * Math.asin(Math.sqrt(x)); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -210,6 +210,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await p.setViewportSize(devices[DEVICE].viewport);
     await p.click("#tabbar [data-tab=preise]"); await p.click("#seg [data-f=ev]"); await p.waitForSelector("#evBody .list .rtitem", T);
 
+    // ---- Barrierefreiheit (axe-core, WCAG 2.1 AA und Best Practice): keine Verstöße in den Hauptansichten, hell und dunkel
+    const axeSrc = fs.readFileSync(require.resolve("axe-core/axe.min.js"), "utf8"), axeBad = [];
+    const p9 = await ctx.newPage(); await p9.goto(srv.url); await p9.waitForSelector("#main .hero .price", T); await p9.evaluate(axeSrc);
+    const ax = async (name) => { const r = await p9.evaluate(() => axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa", "best-practice"] } }));
+      r.violations.forEach((v) => axeBad.push(`${name}: ${v.id} (${v.impact}) ${v.nodes.slice(0, 2).map((x) => x.target.join(" ")).join(" | ")}`)); };
+    for (const scheme of ["light", "dark"]) {
+      await p9.emulateMedia({ colorScheme: scheme }); const sc = (n) => `${scheme}/${n}`;
+      await p9.click("#tabbar [data-tab=preise]"); if (await p9.$("#seg [data-f=e5].on") === null) await p9.click("#seg [data-f=e5]"); await p9.waitForSelector("#main .hero .price", T);
+      await ax(sc("Preise"));
+      await p9.click("#main [data-view='map']"); await p9.waitForSelector("#map .leaflet-marker-icon", { state: "attached", ...T }); await p9.waitForTimeout(300); await ax(sc("Karte")); await p9.click("#main [data-view='list']");
+      await p9.click("#main .list .item >> nth=0"); await p9.waitForSelector("#detail.open"); await p9.waitForTimeout(400); await ax(sc("Detail")); await p9.click("#btnBack"); await p9.waitForTimeout(350);
+      await p9.click("#tabbar [data-tab=route]"); await p9.waitForTimeout(300); await ax(sc("Route"));
+      await p9.click("#tabbar [data-tab=verlauf]"); await p9.waitForTimeout(400); await ax(sc("Verlauf"));
+      await p9.click("#tabbar [data-tab=tankbuch]"); await p9.waitForTimeout(300); await ax(sc("Spritbüchle"));
+      await p9.click("#tabbar [data-tab=preise]"); await p9.click("#btnSettings"); await p9.waitForTimeout(250); await ax(sc("Einstellungen")); await p9.click("#btnDlgCancel");
+      await p9.click("#btnLoc"); await p9.waitForTimeout(250); await ax(sc("Ortswahl")); await p9.click("#btnLocDone");
+      await p9.click("#seg [data-f=ev]"); await p9.waitForSelector("#evBody .list .rtitem", T); await ax(sc("E-Modus"));
+      await p9.click("#evBody .rtitem:has(.p b) .item >> nth=0"); await p9.waitForTimeout(250); await ax(sc("E-Modus Details"));
+      await p9.click("[data-cardopen]"); await p9.waitForSelector("#dlgCard[open]"); await ax(sc("Ladekarte")); await p9.click("#btnCardClose");
+    }
+    check("Barrierefreiheit: axe-core findet keine Verstöße (Preise, Karte, Details, Route, Verlauf, Spritbüchle, Einstellungen, Ortswahl, E-Modus, Ladekarte; hell und dunkel)", axeBad.length === 0, axeBad.slice(0, 12));
+    await p9.close();
+
     // ---- Ebenen: Karten (Leaflet, Ebenen bis 1000) dürfen nicht über die Leiste unten und die Sortenwahl oben reichen
     const layers = (sel) => p.evaluate(async (sel) => {
       const map = document.querySelector(sel), h = innerHeight, wait = () => new Promise((r) => setTimeout(r, 250));
@@ -251,8 +274,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     check("Hinweis: Preise wirklich 3 Std. alt → Hinweis mit „Abruf neu starten“", /3 Std\. alt/.test(h4) && (await p5.$("#btnRetry")) !== null, h4);
     await p5.close();
 
-    state.updMin = 45; const p6 = await open3(async () => {}); await p6.waitForTimeout(600); const h5 = await health(p6);
-    check("Hinweis: 45 Min. alt (GitHub startet nur etwa alle 30 Min.) ist noch normal", h5 === "", h5);
+    state.updMin = 75; const p6 = await open3(async () => {}); await p6.waitForTimeout(600); const h5 = await health(p6);
+    check("Hinweis: 75 Min. alt (GitHub startet nur etwa alle 30 Min., Lücken bis fast 1 Std. kommen vor) ist noch normal", h5 === "", h5);
     await p6.close(); state.updMin = 5;
     // ---- Leiste unten und Sortenwahl: ohne Weichzeichner; Korrektur bei versetztem Anzeigebereich (nur iPhone, installierte App)
     const css = await p.evaluate(() => { const g = (q) => { const e = document.querySelector(q); return e ? getComputedStyle(e) : null; }; return { bar: g("#tabbar")?.backdropFilter, sticky: g(".sticky")?.backdropFilter, will: g("#tabbar")?.willChange }; });

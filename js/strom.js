@@ -3,7 +3,7 @@
 // (Verlauf: Hinweis) – der Bereich Route zeigt Ladestationen am Weg.
 //
 // Datenquelle (Deutschland): MobiData BW „OCPDB“ (api.mobidata-bw.de/ocpdb) – offen, ohne Schlüssel, bundesweit.
-//   Standorte:  Bundesnetzagentur Ladesäulenregister (CC BY 4.0), dazu Betreiber-Feeds der Mobilithek (DATEX II, CC0 / CC BY 4.0)
+//   Standorte:  Bundesnetzagentur Ladesäulenregister, gebündelt von MobiData BW unter „Datenlizenz Deutschland – Namensnennung 2.0“, dazu Betreiber-Feeds der Mobilithek (DATEX II)
 //               mit Belegung in Echtzeit (frei / belegt / gestört).
 //   Preise:     Direktbezahlpreise (Ad-hoc, ohne Fahrstromvertrag) aus den Betreiber-Feeds von chargecloud, EcoMovement und EnBW –
 //               nur dort, wo der Betreiber sie meldet (im Register selbst stehen keine Preise).
@@ -355,7 +355,7 @@ const Strom = (() => {
   const foreignNote = (list) => list.some((s) => s.country && s.country !== "DEU")
     ? `<p class="small" style="margin:6px 4px 0">Außerhalb Deutschlands (z. B. Schweiz) gibt es Standorte und Belegung, aber keine Preise; Kartenpreise (Euro) gelten nur in Deutschland.</p>` : "";
   const FOOT = () => `<p class="foot">Ladedaten: <a href="https://mobidata-bw.de/dataset/e-ladesaulen" target="_blank" rel="noopener">MobiData BW (OCPDB)</a> ·
-    Standorte: Bundesnetzagentur (CC BY 4.0) · Preise und Belegung: Betreiber über <a href="https://mobilithek.info" target="_blank" rel="noopener">Mobilithek</a> (chargecloud, EcoMovement, EnBW) ·
+    Lizenz: <a href="https://www.govdata.de/dl-de/by-2-0" target="_blank" rel="noopener">Datenlizenz Deutschland – Namensnennung 2.0</a> (bearbeitet: zusammengeführt, Preise umgerechnet) · Grundlage: Ladesäulenregister der Bundesnetzagentur · Preise und Belegung: Betreiber über <a href="https://mobilithek.info" target="_blank" rel="noopener">Mobilithek</a> (chargecloud, EcoMovement, EnBW) ·
     Karte © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></p>`;
 
   let last = { list: [], lv: () => "mid", priced: [] };
@@ -630,6 +630,6 @@ const Strom = (() => {
     }
   }
   const resetRoute = () => { Object.assign(S, { stations: [], key: "", at: 0, open: null }); RT.map.clear(); RT.centers.clear(); RT.memo = null; RT.route = null; RT.rows = []; RT.open = null; seq++; };
-  const ATTR = `Ladedaten: <a href="https://mobidata-bw.de/dataset/e-ladesaulen" target="_blank" rel="noopener">MobiData BW (OCPDB)</a> · Standorte: Bundesnetzagentur (CC BY 4.0) · Preise und Belegung: Betreiber über <a href="https://mobilithek.info" target="_blank" rel="noopener">Mobilithek</a>`;
+  const ATTR = `Ladedaten: <a href="https://mobidata-bw.de/dataset/e-ladesaulen" target="_blank" rel="noopener">MobiData BW (OCPDB)</a> · Lizenz: <a href="https://www.govdata.de/dl-de/by-2-0" target="_blank" rel="noopener">Datenlizenz Deutschland – Namensnennung 2.0</a> · Grundlage: Ladesäulenregister der Bundesnetzagentur · Preise und Belegung: Betreiber über <a href="https://mobilithek.info" target="_blank" rel="noopener">Mobilithek</a>`;
   return { render, load, invalidate, rows: () => rows(), fetchArea, fetchRaw, norm, dedupe, loadTariffs, tariffOf, S, RT, gross, condense, loadAlong, routeHtml, drawRouteMarkers, resetRoute, ATTR, KEEP, MAX_KM };
 })();

@@ -1,7 +1,7 @@
 /* Schwabensprit – Farben als Rollen. Gold = Bedienung, Blau/Grau/Rot = Preisniveau (günstig/mittel/teuer). */
 :root{
   color-scheme:light;
-  --bg:#f2f2f7;--bg-a:rgba(242,242,247,.82);--bar:rgba(242,242,247,.96);--card:#fff;--card2:#f6f6f8;--fg:#1c1c1e;--muted:#6e6e73;--line:#e5e5ea;--seg:#e3e3e8;
+  --bg:#f2f2f7;--bg-a:rgba(242,242,247,.82);--bar:rgba(242,242,247,.96);--card:#fff;--card2:#f6f6f8;--fg:#1c1c1e;--muted:#636368;--line:#e5e5ea;--seg:#e3e3e8;
   --acc:#f2b300;--acc-ink:#8a5b00;--on-acc:#1b1300;--acc-glow:rgba(242,179,0,.22);
   --lo:#2a78d6;--mid:#898781;--hi:#e34948;
   --lo-bg:rgba(42,120,214,.12);--mid-bg:rgba(137,135,129,.14);--hi-bg:rgba(227,73,72,.12);
@@ -32,6 +32,7 @@ button{font:inherit;border:0;cursor:pointer;color:inherit;background:none}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .brand{display:flex;align-items:center;gap:10px;min-width:0}
 .logo{width:36px;height:36px;flex:none;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+h1.wordmark{margin:0}
 .wordmark{font-size:27px;font-weight:800;letter-spacing:-.035em;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .iconbtn{background:var(--card);color:var(--acc-ink);width:44px;height:44px;border-radius:22px;display:grid;place-items:center;flex:none;box-shadow:var(--shadow)}
 .iconbtn svg{width:21px;height:21px}

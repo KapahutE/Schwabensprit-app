@@ -39,9 +39,16 @@ Eine App für beide Systeme (Progressive Web App, kein Store nötig):
 - Android: aktuelles Chrome oder Samsung Internet; iPhone: iOS ab 16.4 (wegen des Belegelesers).
 - Eine Version für den Google Play Store wäre möglich (Trusted Web Activity, z. B. mit Bubblewrap), braucht aber ein Entwicklerkonto – für den Eigengebrauch nicht nötig.
 
-## Tests
+## Tests und Prüfungen
 
-`node tests/unit.js` (ohne Browser: Streckengeometrie, Belegleser, Spritbüchle-Verbrauch, Ladekarte, E-Modus-Logik) und `node tests/e2e.js` (Chromium mit Playwright, Standard iPhone 13; `DEVICE="Pixel 7" node tests/e2e.js` für Android, feste Testdaten in `tests/fixtures/`, nachgestellte Dienste; Abläufe in Preise, E-Modus, Ladekarte, Route, Spritbüchle, Belegleser, CSP, Tippflächen, Offline-Start). Vorbereitung: `cd tests && npm install && npx playwright install chromium`. Bei jedem Push laufen beide in GitHub Actions (`.github/workflows/tests.yml`).
+Vorbereitung (einmalig): `npm ci && npx playwright install chromium`. Alles zusammen: `npm test`. Bei jedem Push läuft dasselbe in GitHub Actions (`.github/workflows/tests.yml`).
+
+| Befehl | Prüft |
+|---|---|
+| `npm run lint` | ESLint über `js/`, `sw.js` und `tests/` (undefinierte Namen, tote Variablen, Fehlerquellen; Konfiguration `eslint.config.js` kennt die gemeinsamen Namen der klassischen Skripte) |
+| `node tools/version.js --check` | die Versionsnummer `?v=…` in `index.html` passt zu `app.css` und `js/*.js` |
+| `npm run unit` | ohne Browser: Streckengeometrie, Belegleser, Spritbüchle-Verbrauch, Ladekarte, E-Modus-Logik, Geräteerkennung, Manifest, Versionsnummer, Skript-Liste, CSP-Hosts |
+| `npm run e2e` / `npm run e2e:android` | Chromium mit Playwright (iPhone 13 bzw. Pixel 7), feste Testdaten in `tests/fixtures/`, nachgestellte Dienste: Preise, E-Modus, Ladekarte, Route, Spritbüchle, Belegleser, CSP, Tippflächen, Offline-Start, Zurück-Taste, Installation, Ebenen der Karten, Hinweis zur Aktualisierung, **Barrierefreiheit (axe-core, WCAG 2.1 AA, hell und dunkel)** |
 
 ## Dateien
 
@@ -56,6 +63,11 @@ Eine App für beide Systeme (Progressive Web App, kein Store nötig):
 | `js/routegeo.js` | Geometrie: Polyline, Abstand zur Strecke, Kilometer ab Start, Umweg, Abfragepunkte |
 | `sw.js` | Service Worker: Sofortstart und Betrieb ohne Netz |
 | `tests/` | Unit-Tests, Browser-Tests und Testdaten |
+| `tools/version.js` | berechnet und prüft die Versionsnummer `?v=…` |
+| `eslint.config.js`, `package.json` | Linter und Prüfwerkzeuge (die App selbst braucht keinen Build) |
+| `THIRD_PARTY.md` | Quellen und Lizenzen der Daten und Bestandteile |
+| `docs/` | Architektur, Fahrplan zur Professionalisierung, Bedingungen der Fremddienste, Entwürfe für Datenschutz und Impressum |
+| `CHANGELOG.md` | Änderungen je Stand |
 | `endpoints.json` | Adressen von Routing-, Such- und E-Control-Dienst (austauschbar ohne Code-Änderung) |
 | `js/preise.js` | Bereich Preise, „Wann tanka?“, Karte, Detailansicht |
 | `js/verlauf.js` | Auswertung, Bereich Verlauf, Wochenreports |
@@ -64,16 +76,16 @@ Eine App für beide Systeme (Progressive Web App, kein Store nötig):
 
 Die Skripte sind klassische Skripte ohne Build-Schritt und teilen sich den globalen Gültigkeitsbereich – die Reihenfolge in `index.html` zählt (`grund.js` zuerst).
 
-Nach Änderungen an CSS/JS die Versionsnummer erneuern, damit Handys nicht alte Dateien aus dem Zwischenspeicher nehmen:
+Nach Änderungen an CSS/JS die Versionsnummer erneuern, damit Handys nicht alte Dateien aus dem Zwischenspeicher nehmen (der Test schlägt sonst fehl):
 
 ```sh
-v=$(cat app.css js/*.js | sha1sum | cut -c1-8); sed -i -E "s/\?v=[0-9a-f]+/?v=$v/g" index.html
+node tools/version.js
 ```
 
 ## Ladestationen (E-Modus)
 
 - **Quelle:** MobiData BW „OCPDB“ (api.mobidata-bw.de/ocpdb/api/public) – offen, ohne Schlüssel, bundesweit, mit CORS. Die Adresse steht in `endpoints.json` (`evApi`).
-  - **Standorte:** Bundesnetzagentur-Ladesäulenregister (CC BY 4.0) und Betreiber-Feeds der Mobilithek (DATEX II; CC0 bzw. CC BY 4.0). Doppelte Meldungen derselben Säule (Register + Betreiber) und viele Ladepunkte desselben Betreibers an einem Ort werden zusammengefasst.
+  - **Standorte:** Bundesnetzagentur-Ladesäulenregister und Betreiber-Feeds der Mobilithek (DATEX II), gebündelt von MobiData BW unter „Datenlizenz Deutschland – Namensnennung 2.0“ (Quelle nennen, Lizenz verlinken, Änderungen kenntlich machen – steht im Fuß des E-Modus). Doppelte Meldungen derselben Säule (Register + Betreiber) und viele Ladepunkte desselben Betreibers an einem Ort werden zusammengefasst.
   - **Belegung** (frei / belegt / gestört) und **Preise** kommen nur aus den Betreiber-Feeds (chargecloud, EcoMovement, EnBW); für alle übrigen Säulen aus dem Register gibt es Standort und Leistung, aber weder Preis noch Belegung. In Deutschland gibt es keine zentrale Preisdatenbank für Strom (anders als MTS-K für Kraftstoff).
 - **Belegung:** zählt nur, wenn die Meldung höchstens 2 Stunden alt ist (viele Feeds melden nur bei Änderung oder gar nicht mehr; im Test waren 76 % der Meldungen älter als 6 Stunden). Ältere Meldungen stehen grau als „Belegung unbekannt (nicht aktuell)“, in den Details mit dem letzten Stand.
 - **Ausland:** Standorte und Belegung der Schweiz sind in derselben Schnittstelle (opendata.swiss), aber ohne Preise; dort zeigt die App „keine Preise in diesem Land“. Eigene Kartenpreise (Euro) gelten nur in Deutschland. Österreich: nicht enthalten; die E-Control-Ladestellen-Schnittstelle braucht eine kostenlose Registrierung (API-Schlüssel) und ist noch nicht eingebaut.

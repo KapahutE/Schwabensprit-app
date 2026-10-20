@@ -136,4 +136,15 @@ const fs = require("fs"), path = require("path"), vm = require("vm"), { spawnSyn
   check("Manifest: Verknüpfungen zeigen auf vorhandene Bereiche", mf.shortcuts.length >= 3 && mf.shortcuts.every((x) => tabs.includes(new URL(x.url, "http://x/").searchParams.get("tab"))), mf.shortcuts.map((x) => x.url));
   check("Manifest: Startadresse und Umfang relativ, Anzeige als App", mf.start_url === "./" && mf.scope === "./" && mf.display === "standalone");
 }
+// ---- 6. Versionsnummer in index.html passt zu den Dateien (sonst nehmen Geräte alte Dateien aus dem Zwischenspeicher)
+{
+  const V = require("../tools/version.js"), have = V.inIndex(), want = V.compute();
+  check("Versionsnummer: alle ?v=-Adressen in index.html stimmen mit app.css und js/*.js überein (node tools/version.js)", have.length >= 10 && have.every((v) => v === want), { index: [...new Set(have)], dateien: want });
+  const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  const scripts = [...html.matchAll(/<script src="js\/([\w.]+)\?v=/g)].map((m) => m[1]).sort(), files = fs.readdirSync(path.join(ROOT, "js")).filter((f) => f.endsWith(".js")).sort();
+  check("Skripte: jede Datei in js/ ist in index.html eingebunden und umgekehrt", JSON.stringify(scripts) === JSON.stringify(files), { scripts, files });
+  // Content-Security-Policy erlaubt alle Dienste aus endpoints.json
+  const csp = html.match(/Content-Security-Policy" content="([^"]+)"/)[1], hosts = [...JSON.stringify(require("../endpoints.json")).matchAll(/https:\/\/([^/"]+)/g)].map((m) => m[1]);
+  check("CSP: connect-src nennt alle Dienste aus endpoints.json", hosts.every((h) => csp.includes(`https://${h}`)), hosts.filter((h) => !csp.includes(`https://${h}`)));
+}
 done("Unit-Tests");

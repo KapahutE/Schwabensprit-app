@@ -286,7 +286,7 @@ function preiseHtml() {
   }
   return h + FOOT();
 }
-const FOOT = () => `<p class="foot">Schwabensprit${say(" – mir kennet älles, au billig tanka", "")} · Daten: Tankerkönig / MTS-K (CC BY 4.0)</p>`;
+const FOOT = () => `<p class="foot">Schwabensprit${say(" – mir kennet älles, au billig tanka", "")} · Daten: <a href="https://www.tankerkoenig.de" target="_blank" rel="noopener">Tankerkönig</a> / MTS-K (CC BY 4.0)</p>`;
 
 // ---- 12-Uhr-Regel: Erhöhungen gibt es (fast) nur um 12 Uhr – erkannt aus den beobachteten Änderungen
 let noonCtx = null;

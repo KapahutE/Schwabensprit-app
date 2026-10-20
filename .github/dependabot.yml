@@ -1,0 +1,12 @@
+# Wöchentliche Prüfung auf neue Versionen: Actions in den Workflows und die Prüfwerkzeuge (Playwright, ESLint, axe-core).
+# Dependabot legt nur Änderungsanfragen an; die Tests laufen dort automatisch.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    groups: { actions: { patterns: ["*"] } }
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    groups: { tools: { patterns: ["*"] } }

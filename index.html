@@ -16,7 +16,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
 <title>Schwabensprit</title>
-<link rel="stylesheet" href="app.css?v=8469f9a5">
+<link rel="stylesheet" href="app.css?v=39aea7db">
 </head>
 <body>
 <div id="ptr"><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></div></div>
@@ -36,7 +36,7 @@
   <path d="M24 12.5h2.5l3.5 4v11a2 2 0 0 0 4 0V18" fill="none" stroke="url(#lgGold)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
   <path d="M16.5 21v7M13.7 25.3l2.8 2.8 2.8-2.8" fill="none" stroke="#1b1300" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
-    <div class="wordmark">Schwabensprit</div>
+    <h1 class="wordmark">Schwabensprit</h1>
   </div>
   <div style="display:flex;gap:8px">
     <button class="iconbtn" id="btnFetch" aria-label="Jetzt neu abrufen">
@@ -47,7 +47,7 @@
     </button>
   </div>
 </header>
-<div class="locrow">
+<div class="locrow" role="region" aria-label="Ort und Datenstand">
   <button class="locbtn" id="btnLoc" aria-label="Ort und Radius wählen">
     <svg class="lp" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
     <span id="locLabel">Ort wählen</span>
@@ -56,7 +56,7 @@
   <span class="stand" id="stand"></span>
 </div>
 
-<div class="sticky">
+<div class="sticky" role="region" aria-label="Sorte wählen">
   <div class="seg" id="seg">
     <button data-f="e5" aria-label="Super E5"><span class="lg">Super </span>E5</button>
     <button data-f="e10" aria-label="Super E10"><span class="lg">Super </span>E10</button>
@@ -74,7 +74,7 @@
   <button data-tab="tankbuch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19M9 7.5h6M9 11h4"/></svg><span class="tbname">Tankbuch</span></button>
 </div></nav>
 
-<div id="detail" aria-hidden="true"><div class="wrap" id="detailBody"></div></div>
+<div id="detail" role="region" aria-label="Details zur Tankstelle" aria-hidden="true"><div class="wrap" id="detailBody"></div></div>
 <input type="file" id="tbFile" accept="image/*" hidden>
 <input type="file" id="tbImport" accept="application/json,.json" hidden>
 <dialog id="dlgTb">
@@ -164,7 +164,7 @@
     </form>
     <div class="optgroup" id="searchResults" style="margin-top:8px"></div>
     <div class="grouplabel">Radius</div>
-    <div class="radius"><span class="sub">1</span><input type="range" id="inRadius" min="1" max="25" step="1"><span class="sub">25</span><b id="radiusVal"></b></div>
+    <div class="radius"><span class="sub">1</span><input type="range" id="inRadius" aria-label="Umkreis in Kilometern" min="1" max="25" step="1"><span class="sub">25</span><b id="radiusVal"></b></div>
     <div class="actions"><button class="btn block" id="btnLocDone" type="button">Fertig</button></div>
   </div>
 </dialog>
@@ -204,6 +204,18 @@
       <p class="small" id="instTxt"></p>
       <button class="btn secondary block" id="btnInstall" type="button" hidden>📲 App installieren</button>
     </div>
+    <details class="tbl privacy"><summary>Quellen und Lizenzen</summary>
+      <ul class="small">
+        <li><b>Kraftstoffpreise Deutschland:</b> <a href="https://creativecommons.tankerkoenig.de" target="_blank" rel="noopener">Tankerkönig</a> / Markttransparenzstelle für Kraftstoffe (Bundeskartellamt), CC BY 4.0.</li>
+        <li><b>Kraftstoffpreise Österreich:</b> E-Control, <a href="https://www.spritpreisrechner.at" target="_blank" rel="noopener">Spritpreisrechner</a>.</li>
+        <li><b>Ladestationen:</b> <a href="https://mobidata-bw.de/dataset/e-ladesaulen" target="_blank" rel="noopener">MobiData BW</a> (OCPDB), <a href="https://www.govdata.de/dl-de/by-2-0" target="_blank" rel="noopener">Datenlizenz Deutschland – Namensnennung 2.0</a> (bearbeitet). Grundlage: Ladesäulenregister der Bundesnetzagentur; Preise und Belegung: Betreiber über <a href="https://mobilithek.info" target="_blank" rel="noopener">Mobilithek</a>.</li>
+        <li><b>Karten, Ortssuche, Routen:</b> © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap-Mitwirkende</a> (ODbL). Kacheln: OpenStreetMap; Ortssuche: Nominatim; Routen: FOSSGIS (OSRM, Valhalla).</li>
+        <li><b>Kartenbibliothek:</b> <a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a> (BSD-2-Clause).</li>
+        <li><b>Belegleser:</b> <a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">Tesseract.js</a> mit Tesseract-Kern und deutschen Sprachdaten (Apache-2.0), läuft auf dem Gerät.</li>
+        <li><b>Marken-Logos:</b> Symbole der Webseiten der Marken, abgerufen über Google.</li>
+      </ul>
+      <p class="small">Einzelheiten: <a href="https://github.com/KapahutE/Schwabensprit-app/blob/main/THIRD_PARTY.md" target="_blank" rel="noopener">THIRD_PARTY.md</a></p>
+    </details>
     <details class="tbl privacy"><summary>Datenschutz</summary>
       <p class="small">Die App hat keinen eigenen Server und kein Tracking. Einstellungen, Favoriten, Ladekarten-Preise (Eigeneingabe), Spritbüchle, gemerkte Strecken und zuletzt gesuchte Orte liegen nur auf diesem Gerät, ebenso der zuletzt geladene Stand der Preise und Ladestationen (Zwischenspeicher für schnellen Start und Betrieb ohne Netz). Der Standort wird nur mit deiner Freigabe (iPhone bzw. Android) und nur bei „Mein Standort“ abgefragt und höchstens auf ca. 100 m gerundet gespeichert.</p>
       <p class="small">Folgende Dienste bekommen beim Benutzen Daten (immer auch deine IP-Adresse):</p>
@@ -237,14 +249,14 @@
 <div id="instBar" hidden><span>📲 Als App installieren – startet schneller, auch ohne Netz</span><button class="btn" id="btnInstBar" type="button">Installieren</button><button id="btnInstNo" type="button" aria-label="Hinweis schließen">✕</button></div>
 <div class="toast" id="toast"></div>
 
-<script src="js/grund.js?v=8469f9a5"></script>
-<script src="js/preise.js?v=8469f9a5"></script>
-<script src="js/verlauf.js?v=8469f9a5"></script>
-<script src="js/belegleser.js?v=8469f9a5"></script>
-<script src="js/routegeo.js?v=8469f9a5"></script>
-<script src="js/route.js?v=8469f9a5"></script>
-<script src="js/ladekarte.js?v=8469f9a5"></script>
-<script src="js/strom.js?v=8469f9a5"></script>
-<script src="js/tankbuch.js?v=8469f9a5"></script>
+<script src="js/grund.js?v=39aea7db"></script>
+<script src="js/preise.js?v=39aea7db"></script>
+<script src="js/verlauf.js?v=39aea7db"></script>
+<script src="js/belegleser.js?v=39aea7db"></script>
+<script src="js/routegeo.js?v=39aea7db"></script>
+<script src="js/route.js?v=39aea7db"></script>
+<script src="js/ladekarte.js?v=39aea7db"></script>
+<script src="js/strom.js?v=39aea7db"></script>
+<script src="js/tankbuch.js?v=39aea7db"></script>
 </body>
 </html>

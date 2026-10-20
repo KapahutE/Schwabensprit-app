@@ -1,4 +1,5 @@
-# Tests bei jedem Push und jeder Änderungsanfrage: Unit-Tests (ohne Browser) und Browser-Tests (Chromium, feste Testdaten).
+# Prüfungen bei jedem Push und jeder Änderungsanfrage: Linter, Versionsnummer, Unit-Tests (ohne Browser) und Browser-Tests
+# (Chromium, feste Testdaten) mit iPhone- und Android-Größe.
 name: Tests
 on:
   push:
@@ -10,20 +11,24 @@ permissions:
 jobs:
   tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Playwright installieren
-        working-directory: tests
+          cache: npm
+      - name: Werkzeuge installieren
         run: |
-          npm install --no-audit --no-fund
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci --no-audit --no-fund
           npx playwright install --with-deps chromium
+      - name: Linter
+        run: npm run lint
+      - name: Versionsnummer in index.html
+        run: node tools/version.js --check
       - name: Unit-Tests
-        run: node tests/unit.js
+        run: npm run unit
       - name: Browser-Tests (iPhone)
-        run: node tests/e2e.js
+        run: npm run e2e
       - name: Browser-Tests (Android)
-        run: DEVICE="Pixel 7" node tests/e2e.js
+        run: npm run e2e:android

@@ -104,7 +104,7 @@ function parseReceipt(raw) {
   // Datum (TT.MM.JJ[JJ]) und Uhrzeit (HH:MM[:SS])
   const now = new Date();
   let dateLine = -1;
-  dates: for (const [i, l] of lines.entries()) for (const m of l.matchAll(/(?<![\d,.])(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4}|\d{2})(?![\d,])/g)) {
+  dates: for (const [i, l] of lines.entries()) for (const m of l.matchAll(/(?<![\d,.])(\d{1,2})[./-](\d{1,2})[./-](\d{4}|\d{2})(?![\d,])/g)) {
     const y = m[3].length === 2 ? 2000 + +m[3] : +m[3], mo = +m[2], d = +m[1], dt = new Date(y, mo - 1, d);
     if (y >= 2020 && dt.getMonth() === mo - 1 && dt.getDate() === d && dt <= new Date(now.getTime() + 864e5)) {
       out.date = `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`; dateLine = i; break dates;
