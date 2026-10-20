@@ -147,4 +147,13 @@ const fs = require("fs"), path = require("path"), vm = require("vm"), { spawnSyn
   const csp = html.match(/Content-Security-Policy" content="([^"]+)"/)[1], hosts = [...JSON.stringify(require("../endpoints.json")).matchAll(/https:\/\/([^/"]+)/g)].map((m) => m[1]);
   check("CSP: connect-src nennt alle Dienste aus endpoints.json", hosts.every((h) => csp.includes(`https://${h}`)), hosts.filter((h) => !csp.includes(`https://${h}`)));
 }
+// ---- 7. Veröffentlichungsordner: enthält alles, was die App braucht, und nichts von Tests, Dokumentation, Werkzeugen
+{
+  const os = require("os"), P = require("../tools/publish.js"), out = fs.mkdtempSync(path.join(os.tmpdir(), "site-")), r = P.build(out);
+  const top = fs.readdirSync(out).sort();
+  check("Veröffentlichung: alle in index.html und manifest genannten Dateien sind im Ordner", r.missing.length === 0, r.missing);
+  check("Veröffentlichung: keine Tests, Dokumente oder Werkzeuge im Ordner", !top.some((f) => /^(tests|docs|tools|node_modules|package|eslint|README|CHANGELOG|THIRD_PARTY)/.test(f)), top);
+  const sw = fs.readFileSync(path.join(out, "sw.js"), "utf8"); check("Veröffentlichung: Service Worker und Skripte liegen im Ordner", sw.length > 100 && fs.existsSync(path.join(out, "js", "grund.js")));
+  fs.rmSync(out, { recursive: true, force: true });
+}
 done("Unit-Tests");

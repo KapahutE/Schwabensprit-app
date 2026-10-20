@@ -23,8 +23,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/configure-pages@v6
+      # Nur die App veröffentlichen (nicht Tests, Dokumentation und Werkzeuge); die Liste steht in tools/publish.js
+      - name: App-Dateien zusammenstellen
+        run: node tools/publish.js _site
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: .
+          path: _site
       - id: deploy
         uses: actions/deploy-pages@v5

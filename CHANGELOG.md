@@ -7,6 +7,7 @@ Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) 
 - Barrierefreiheit: Schieberegler beschriftet, Überschrift 1. Ebene, Bereiche der Seite benannt, Kontrast der grauen Schrift in der hellen Darstellung
 - Quellen und Lizenzen in den Einstellungen und in `THIRD_PARTY.md`; **Namensnennung der Ladedaten korrigiert** (Datenlizenz Deutschland – Namensnennung 2.0 statt „CC BY 4.0“), Tankerkönig verlinkt
 - „Preise zu alt“ erst nach 90 Minuten (GitHub startet den Abruf nur etwa alle 30 Minuten)
+- Veröffentlicht wird nur noch die App (`tools/publish.js` → `_site`), nicht mehr das ganze Repository (Tests, Dokumentation, Werkzeuge)
 - Dokumentation: `docs/` (Architektur, Fahrplan, Bedingungen der Dienste, Entwürfe Datenschutz und Impressum); Dependabot; Vorlage für Fehlermeldungen
 
 ## 19.10.2026
