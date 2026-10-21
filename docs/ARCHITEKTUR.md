@@ -8,7 +8,7 @@ Stand: 20.10.2026. Beschreibt, wie die App aufgebaut ist und wo Daten fließen. 
 Tankerkönig (MTS-K, CC BY 4.0)
         │  list.php je Base (25 km), 4 Bases, alle ~15–30 Min.
         ▼
-Daten-Repository  KapahutE/tankpreise  (privat, GitHub Actions, Python)
+Daten-Repository  KapahutE/tankpreise  (öffentlich lesbar, GitHub Actions, Python)
    main:       Rohdaten (data/), Programm tankpreise.py
    app-daten:  aufbereitete JSON-Dateien (docs/data, docs/reports), ein einziger Commit, bei jedem Abruf überschrieben
         │  GitHub-API (Zugangsschlüssel nur auf dem Gerät)
@@ -27,7 +27,7 @@ Es gibt **keinen eigenen Server**. Alles, was nicht aus dem Daten-Repository kom
 ## Daten-Repository (Abruf)
 
 - Workflow `tankpreise.yml`: Zeitplan `1-59/5 * * * *` (alle 5 Minuten angestoßen), das Programm ruft aber höchstens alle 13 Minuten ab (`--min-interval 13`); montags 04:37 UTC Wochenreport. GitHub führt geplante Läufe verzögert aus: **tatsächlich Median 29 Minuten, bis 57 Minuten** (Messung über 100 Läufe).
-- Vier Bases (`bases.json`: F Uhingen, H Leinfelden, S Metzingen, MJ Wernau), je 25 km Radius. Der Schlüssel liegt als Secret `TANKERKOENIG_API_KEY`.
+- Vier Bases (`bases.json`: F Uhingen, H Leinfelden, S Metzingen, MJ Wernau), je 25 km Radius. Der Tankerkönig-Schlüssel liegt als verschlüsseltes Actions-Secret `TANKERKOENIG_API_KEY` (nicht im Code, nicht in Dateien; das Programm schreibt ihn nicht ins Protokoll, GitHub maskiert Secrets zusätzlich). Der Ablauf hat nur die Auslöser `schedule` und `workflow_dispatch`, keine Änderungsanfragen von Fremden.
 - Ergebnis: `docs/data/<Base>/latest.json`, `history.json`, `changes.json`, `forecast.json`, `reports.json` sowie `docs/reports/`. Veröffentlicht per Force-Push als einzelner Commit auf `app-daten` (das Repository wächst dadurch nicht). Rohdaten bleiben auf `main`.
 
 ## App (dieses Repository)
@@ -72,6 +72,6 @@ Klassische Skripte ohne Build-Schritt; alle teilen sich den globalen Gültigkeit
 ## Bekannte Grenzen
 
 - Geplante GitHub-Läufe sind unregelmäßig (Median 29 Min.); ein externer Zeitgeber wäre verlässlicher.
-- Jedes Gerät braucht einen eigenen Zugangsschlüssel für das private Daten-Repository.
+- Jedes Gerät braucht einen eigenen GitHub-Zugangsschlüssel, obwohl das Daten-Repository öffentlich lesbar ist: Die App liest über die GitHub-API mit Schlüssel (Lesen ohne Schlüssel wäre über `raw.githubusercontent.com` möglich, würde aber eine Änderung der App und der Content-Security-Policy brauchen). Nur das Starten eines Abrufs braucht zwingend einen Schlüssel.
 - Die Seite scrollt als Ganzes; feste Leisten (unten, Sortenwahl) hängen dadurch am Anzeigebereich des Browsers. Auf dem iPhone (installierte App) gibt es dafür bekannte WebKit-Fehler, siehe README.
 - Gemeinsamer globaler Gültigkeitsbereich: Namen dürfen sich nicht überschneiden (Linter prüft Verwendung, nicht Doppelungen).
