@@ -479,7 +479,7 @@ let tab = TABS.includes(store.get("tab", "")) ? store.get("tab", "") : "preise";
   if (q.has("tab") || q.has("ev")) try { history.replaceState(null, "", location.pathname + location.hash); } catch {}
 }
 let showAll = false;          // Tankstellenliste: Top 10 oder alle
-const LIST_TOP = 10, LIST_MAX = 60;
+const LIST_TOP = 5, LIST_MAX = 60;
 // Zurück-Taste/-Geste (Android, Safari): aus einem Bereich erst zurück zu „Preise“, dann erst raus aus der App.
 // Dafür liegt beim Wechsel weg von „Preise“ ein Eintrag {t:1} im Verlauf.
 const tabState = () => { try { return history.state?.t === 1; } catch { return false; } };
@@ -948,9 +948,9 @@ async function checkHealth(force) {
     }
   } catch {}
   if (key !== healthKey) return;   // inzwischen anderer Stand: diese Antwort ist überholt
-  healthHtml = msgs.length ? `<div class="card notice warnbox"><span class="ic">⚠️</span><div><b>Hinweis zur Aktualisierung</b><br>${msgs.map(esc).join("<br>")}
-    <div class="row" style="margin-top:10px"><a class="btn secondary" href="https://github.com/${esc(repo())}/actions" target="_blank" rel="noopener">Bei GitHub ansehen</a>
-    ${view.cachedAt ? `<button class="btn" id="btnReload">Erneut laden</button>` : token() ? `<button class="btn" id="btnRetry">Abruf neu starten</button>` : ""}</div></div></div>` : "";
+  healthHtml = msgs.length ? `<div class="card notice warnbox slim"><span class="ic">⚠️</span><div>${msgs.map(esc).join(" ")}
+    <span class="slimact">${view.cachedAt ? `<button class="btn" id="btnReload">Erneut laden</button>` : token() ? `<button class="btn" id="btnRetry">Abruf neu starten</button>` : ""}
+    <a href="https://github.com/${esc(repo())}/actions" target="_blank" rel="noopener">GitHub</a></span></div></div>` : "";
   paintHealth();
 }
 function paintHealth() { const el = $("#health"); if (el && el.innerHTML !== healthHtml) el.innerHTML = healthHtml; }

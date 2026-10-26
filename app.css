@@ -117,9 +117,7 @@ h1.wordmark{margin:0}
 .when .cd{font-variant-numeric:tabular-nums}
 .wfact{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--line);font-size:14px;color:var(--muted)}
 .wfact b{color:var(--fg)}
-details.wfc{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--line);font-size:14px}
-details.wfc summary{font-size:14px}
-details.wfc .cw{margin-top:10px}
+.wfact .cw{margin-top:10px}
 .valuecard .price1{font-size:21px;font-weight:750;letter-spacing:-.02em;flex:none}
 .two-in{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
 /* Favoriten */
@@ -453,3 +451,14 @@ label.check input{width:20px;height:20px;padding:0;flex:none;accent-color:var(--
 #instBar .btn{padding:10px 14px;font-size:14px;min-height:44px}
 #instBar #btnInstNo{width:44px;height:44px;border-radius:12px;background:none;color:var(--muted);font-size:18px}
 body.lock #instBar{display:none}
+
+/* Schlanke Ansicht der Startseite */
+.when .wrat{margin:8px 0 0}
+details.wmore{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);font-size:14px}
+details.wmore summary{font-size:14px}
+details.wmore .tankrat{margin-top:10px}
+.valuecard .vrow{display:flex;align-items:center;gap:12px;width:100%;margin-top:12px;padding:0;background:none;color:inherit}
+.sortrow{align-items:center;justify-content:space-between;flex-wrap:wrap}
+.sortrow .chip{flex:none}
+.warnbox.slim{padding:10px 12px}.warnbox.slim .slimact{display:inline-flex;gap:10px;align-items:center;margin-left:6px;white-space:nowrap}
+.warnbox.slim .btn{padding:6px 12px;font-size:13px;min-height:44px}.warnbox.slim a{font-size:13px;color:var(--acc-ink)}

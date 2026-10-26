@@ -2,6 +2,9 @@
 
 Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) steht in den Einstellungen unter „Anzeige-Diagnose“.
 
+## 26.10.2026 – Schlankere Startseite
+- Startseite von 3,2 auf gut 2 Bildschirme verkürzt: „Wann tanken?“ zeigt nur Überschrift und einen Satz (Tank-Rat, Tageszeiten, Prognose und Gesetzestext unter „Mehr“), zweite Karte ohne doppelte Knöpfe, Liste mit 5 statt 10 Einträgen, Sortierung als ein Umschalter (Preis / Nähe / Anfahrt), Legende unter der Liste, Hinweis zur Aktualisierung einzeilig
+
 ## 20.10.2026 – Vorbereitung der Professionalisierung
 - Linter (ESLint) und Barrierefreiheits-Prüfung (axe-core) in den Tests; Versionsnummer, Skript-Liste und Sicherheitsrichtlinie werden geprüft
 - Barrierefreiheit: Schieberegler beschriftet, Überschrift 1. Ebene, Bereiche der Seite benannt, Kontrast der grauen Schrift in der hellen Darstellung
