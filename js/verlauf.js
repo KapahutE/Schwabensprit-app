@@ -110,7 +110,8 @@ function peakNote(series) {
   return `<span>${say(`Spitza meischtens geg ${h} Uhr, im Schnitt ${ct(mean(rise))} überm Tagestief`, `Spitzen meist gegen ${h} Uhr, im Schnitt ${ct(mean(rise))} über dem Tagestief`)}</span>`;
 }
 
-let anaMemo = {};
+let anaMemo = {}, vOpen = false;
+document.addEventListener("toggle", (e) => { if (e.target.id === "vMore") vOpen = e.target.open; }, true);
 function renderAnalysis() {
   if (!view || view.error) return;
   const elA = $("#analysis");
@@ -146,7 +147,7 @@ function renderAnalysis() {
   let h = `<div class="sec" style="margin-top:6px"><h2>${sum.days >= 6 ? say("Die letschde 7 Täg", "Letzte 7 Tage") : say("Bis etz gsammelt", "Bisher gesammelt")}</h2><span class="sub">${FUELS[fuel]} · ${radius} km</span></div>
     <div class="stats">
       <div class="card stat"><span class="eyebrow">Ø Preis</span><span class="v">${eur(sum.mean)}</span>${sum.trend != null ? pill(sum.trend, `${ct(sum.trend)} ggü. Vorwoche`) : ""}</div>
-      <div class="card stat"><span class="eyebrow">Tiefstpreis</span><span class="v">${eurX(sum.lo.v)}</span><span class="sub">${esc(labelOf(sum.lo.id))} · ${esc(fmtTime(sum.lo.t))}</span></div>
+      <div class="card stat"><span class="eyebrow">Tiefstpreis</span><span class="v">${eurX(sum.lo.v)}</span><span class="sub lo2">${esc(byId(sum.lo.id)?.brand || "Tankstelle")}<br>${esc(fmtTime(sum.lo.t))}</span></div>
     </div>
     <div class="card chartcard"><div class="t">Durchschnittspreis</div><div class="s">Alle Tankstellen im Umkreis, stündlich</div>
       ${lineChart([{ name: "Ø im Umkreis", pts: sum.series }], { peaks: true })}
@@ -159,7 +160,8 @@ function renderAnalysis() {
       ${sum.bestWd != null ? `<div class="facts"><div>${say(`Am billigschde meischtens am <b>${WD_SCHW[sum.bestWd]}</b>.`, `Günstigster Wochentag: <b>${WD_LONG[sum.bestWd]}</b>.`)}</div></div>` : ""}
       ${tbl(["Uhrzeit", "Abweichung"], Object.keys(sum.hourAvg).map(Number).sort((a, b) => a - b).map((hh) => [`${hh}–${hh + 1} Uhr`, ct(sum.hourAvg[hh])]))}</div>`;
   }
-  h += changeCard(changeStats(cache.changes, ids, fuel), say("Wann drehet se am Preis?", "Wann ändern sich die Preise?"), "Anzahl der Erhöhungen und Senkungen je Uhrzeit");
+  const chgCard = changeCard(changeStats(cache.changes, ids, fuel), say("Wann drehet se am Preis?", "Wann ändern sich die Preise?"), "Anzahl der Erhöhungen und Senkungen je Uhrzeit");
+  if (chgCard) h += `<details class="tbl vmore" id="vMore"${vOpen ? " open" : ""}><summary>${say("Wann drehet se am Preis? – Details", "Wann ändern sich die Preise? – Details")}</summary>${chgCard}</details>`;
   h += `<div class="sec"><h2>${say("Im Schnitt am billigschde", "Günstigste im Schnitt")}</h2><span class="sub">Ø der Woche</span></div><div class="list">` + sum.ranking.slice(0, 5).map((r, i) => {
     const s = byId(r.id);
     return `<button class="item" data-detail="${esc(r.id)}"><div class="badge rank">${i + 1}</div><div class="info">

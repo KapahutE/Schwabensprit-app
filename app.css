@@ -462,3 +462,5 @@ details.wmore .tankrat{margin-top:10px}
 .sortrow .chip{flex:none}
 .warnbox.slim{padding:10px 12px}.warnbox.slim .slimact{display:inline-flex;gap:10px;align-items:center;margin-left:6px;white-space:nowrap}
 .warnbox.slim .btn{padding:6px 12px;font-size:13px;min-height:44px}.warnbox.slim a{font-size:13px;color:var(--acc-ink)}
+.stats>*{min-width:0}.stat .lo2{display:block;overflow-wrap:anywhere}
+details.vmore{margin:14px 4px 0;font-size:14px}details.vmore summary{font-size:14px}details.vmore .chartcard{margin-top:10px}
