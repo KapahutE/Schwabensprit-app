@@ -156,4 +156,12 @@ const fs = require("fs"), path = require("path"), vm = require("vm"), { spawnSyn
   const sw = fs.readFileSync(path.join(out, "sw.js"), "utf8"); check("Veröffentlichung: Service Worker und Skripte liegen im Ordner", sw.length > 100 && fs.existsSync(path.join(out, "js", "grund.js")));
   fs.rmSync(out, { recursive: true, force: true });
 }
+// ---- 8. Sicherheit: Actions sind auf Commit-Prüfsummen festgelegt, der Berichtsrahmen ist abgeschottet
+{
+  const wf = fs.readdirSync(path.join(ROOT, ".github/workflows")).map((f) => fs.readFileSync(path.join(ROOT, ".github/workflows", f), "utf8")).join("\n");
+  const uses = [...wf.matchAll(/uses:\s*(\S+)/g)].map((m) => m[1]);
+  check("Actions: jede Action ist auf eine 40-stellige Commit-Prüfsumme festgelegt", uses.length > 0 && uses.every((u) => /@[0-9a-f]{40}$/.test(u)), uses.filter((u) => !/@[0-9a-f]{40}$/.test(u)));
+  const frame = fs.readFileSync(path.join(ROOT, "index.html"), "utf8").match(/<iframe id="repFrame"[^>]*>/)[0];
+  check("Wochenreport: Rahmen mit sandbox, ohne allow-same-origin und allow-scripts", /sandbox="/.test(frame) && !/allow-same-origin|allow-scripts/.test(frame), frame);
+}
 done("Unit-Tests");

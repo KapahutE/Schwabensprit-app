@@ -42,7 +42,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await ctx.route(/google\.com\/s2|tile\.openstreetmap|e-control|tankerkoenig|nominatim|valhalla/, (r) => r.fulfill({ status: 404, body: "" }));
   if (process.env.LEAFLET_DIR) await ctx.route(/unpkg\.com\/leaflet@1\.9\.4\/dist\/(.*)/, (r) => r.fulfill({ path: path.join(process.env.LEAFLET_DIR, r.request().url().split("/dist/")[1].split("?")[0]) }));
   await ctx.addInitScript(() => {
-    if (sessionStorage.getItem("i")) return; sessionStorage.setItem("i", 1);
+    try { if (sessionStorage.getItem("i")) return; sessionStorage.setItem("i", 1); } catch { return; }   // im abgeschotteten Berichtsrahmen gibt es keinen Speicher
     localStorage.setItem("token", "test-token"); localStorage.setItem("repo", "test/tankpreise"); localStorage.setItem("dataMode", "api");
     localStorage.setItem("loc", JSON.stringify({ mode: "base", baseId: "H" })); localStorage.setItem("tab", "preise"); localStorage.removeItem("ev");
     localStorage.setItem("rtA", JSON.stringify({ kind: "base", baseId: "H", label: "Base H · Leinfelden" }));
