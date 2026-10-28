@@ -457,10 +457,12 @@ body.lock #instBar{display:none}
 details.wmore{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);font-size:14px}
 details.wmore summary{font-size:14px}
 details.wmore .tankrat{margin-top:10px}
-.valuecard .vrow{display:flex;align-items:center;gap:12px;width:100%;margin-top:12px;padding:0;background:none;color:inherit}
 .sortrow{align-items:center;justify-content:space-between;flex-wrap:wrap}
 .sortrow .chip{flex:none}
 .warnbox.slim{padding:10px 12px}.warnbox.slim .slimact{display:inline-flex;gap:10px;align-items:center;margin-left:6px;white-space:nowrap}
 .warnbox.slim .btn{padding:6px 12px;font-size:13px;min-height:44px}.warnbox.slim a{font-size:13px;color:var(--acc-ink)}
 .stats>*{min-width:0}.stat .lo2{display:block;overflow-wrap:anywhere}
 details.vmore{margin:14px 4px 0;font-size:14px}details.vmore summary{font-size:14px}details.vmore .chartcard{margin-top:10px}
+.alt{display:flex;align-items:center;gap:10px;width:100%;margin-top:12px;padding:12px 0 0;border-top:1px solid var(--line);text-align:left;color:inherit;background:none}
+.alt .grow{flex:1;min-width:0}.alt .mini{font-size:13px;color:var(--muted)}.alt .altwho{display:flex;align-items:baseline;gap:8px;margin-top:2px;min-width:0}.alt .altp{flex:none;font-size:17px}.alt .altn{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;color:var(--muted)}
+.tag2{flex:none;font-size:13px;font-weight:700;padding:4px 9px;border-radius:9px;background:var(--seg);color:var(--fg)}

@@ -66,6 +66,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     check("Einstellungen: Eingabetaste speichert (statt abzubrechen)", await p.evaluate(() => localStorage.getItem("token")) === "test-token" && !(await p.evaluate(() => document.querySelector("#dlg").open)));
     await p.waitForSelector("#main .hero .price", T);
 
+    // ---- Eine Karte statt zwei: „Mit Hin- und Rückfahrt besser“ als Zeile in der Karte „Günstigste“
+    const alt = await p.evaluate(() => ({ cards: document.querySelectorAll("#main .hero").length, second: document.querySelectorAll("#main .valuecard").length, row: document.querySelector("#main .hero .alt")?.innerText.replace(/\s+/g, " ") ?? null }));
+    check("Preise: keine zweite Karte „Lohnt sich am meisten“, Hinweis höchstens als Zeile in der Karte", alt.cards === 1 && alt.second === 0 && (alt.row === null || /Rückfahrt besser/.test(alt.row) && /−[\d,]+ €/.test(alt.row)), alt);
+    if (alt.row) { await p.click("#main .hero .alt"); await p.waitForSelector("#detail.open"); check("Preise: Zeile „besser mit Anfahrt“ öffnet die Details dieser Tankstelle", /\S/.test(await tx("#detailBody")) ); await p.click("#btnBack"); await p.waitForTimeout(350); }
+
     // ---- E-Modus
     await p.click("#seg [data-f=ev]"); await p.waitForSelector("#evBody .list .rtitem", T);
     check("E-Modus: ⚡ Strom aktiv, Ladestationen mit Preis in €/kWh", /Strom/.test(await tx("#seg .on")) && /€\/kWh/.test(await tx("#evBody .hero")) && (await n("#evBody .rtitem")) >= 5);

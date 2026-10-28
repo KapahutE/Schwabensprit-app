@@ -207,6 +207,12 @@ function preiseHtml() {
       : say(`🚗 Mit Anfahrt bleibet bloß ${eur2(net)} – unte lohnt sich's mehr.`, `🚗 Mit Anfahrt bleiben nur ${eur2(net)} – unten lohnt es sich mehr.`);
   }
 
+  // Mit Hin- und Rückfahrt kann eine andere Tankstelle unterm Strich besser sein als die mit dem niedrigsten Preis (eine Zeile in der Karte)
+  const better = best && smart && smart.id !== best.id ? { s: smart, gain: fillCost(best) - fillCost(smart) } : null;
+  const alt = better && better.gain >= 0.05 ? `<button class="alt" data-detail="${esc(better.s.id)}" aria-label="${say("Mit Hin- ond Rückfahrt besser", "Mit Hin- und Rückfahrt besser")}: ${esc(better.s.brand)}, ${esc(better.s.place)}, ${eur2(better.gain)} günstiger">
+        <div class="grow"><div class="mini">🚗 ${say("Mit Hin- ond Rückfahrt besser:", "Mit Hin- und Rückfahrt besser:")}</div>
+          <div class="altwho"><b class="altp">${price(better.s[fuel])}</b><span class="altn">${esc(better.s.brand)} · ${km(better.s.dist)}</span></div></div>
+        <span class="tag2">−${eur2(better.gain)}</span>${CHEV}</button>` : "";
   if (best) {
     const stt = state(best), save = avgNow - best[fuel];
     h += `<section class="card hero">
@@ -220,28 +226,14 @@ function preiseHtml() {
         ${withPrice.length > 1 && save > 0.0005 ? pill(-save, `${ct(-save)} unter Ø`) : ""}
       </div>
       ${SW() && withPrice.length > 1 && save > 0.0005 ? `<p class="quip">🥨 ${brezel(save * TANK())}</p>` : ""}
-      ${drive && !(smart && smart.id !== best.id) ? `<p class="quip">${drive}</p>` : ""}
+      ${drive && !alt ? `<p class="quip">${drive}</p>` : ""}
       <div class="row two">
         <button class="btn" data-route="${esc(best.id)}">${NAV} Route</button>
         <button class="btn secondary" data-detail="${esc(best.id)}">Details</button>
-      </div>
+      </div>${alt}
     </section>`;
   } else if (view.src.type !== "none") {
     h += `<div class="card empty"><div class="bigic">🌙</div><b>${say("Grad hot älles zu", "Gerade alles zu")}</b><p>${say(`Im Umkreis vo ${radius} km hot koi Tankstell mit ${FUELS[fuel]} offa. Morga isch au no a Dag.`, `Im Umkreis von ${radius} km ist keine Tankstelle mit ${FUELS[fuel]} geöffnet.`)}</p></div>`;
-  }
-  if (best && smart && smart.id !== best.id) {
-    const gain = fillCost(near) - fillCost(smart);
-    h += `<section class="card valuecard">
-      <div class="tiphead"><div class="ic">🚗</div><div><b>${say("Lohnt sich am meischda", "Lohnt sich am meisten")}</b>
-        <div class="sub">${say("inkl. Hin- ond Rückfahrt", "inkl. Hin- und Rückfahrt")} · ${fmtNum(TANK(), 0)} l</div></div></div>
-      <button class="station vrow" data-detail="${esc(smart.id)}" aria-label="Details zu ${esc(smart.brand)}, ${esc(smart.place)}">${badge(smart, lv(smart))}
-        <div style="min-width:0;flex:1;text-align:left"><div class="where" style="font-size:16px">${esc(smart.brand)} · ${esc(smart.place)}</div>
-        <div class="sub">${km(smart.dist)}</div></div><div class="price1">${price(smart[fuel])}</div>${CHEV}</button>
-      <p class="verdict">${smart.id === near.id
-        ? say("Glei die nächschde Tankstell isch unterm Strich am günstigschda – a Umweg lohnt sich grad net.", "Gleich die nächste Tankstelle ist unterm Strich am günstigsten – ein Umweg lohnt sich gerade nicht.")
-        : say(`Unterm Strich <b>${eur2(gain)} billiger</b> als an dr nächschde Tankstell (${esc(near.brand)}, ${km(near.dist)}).`, `Unterm Strich <b>${eur2(gain)} günstiger</b> als an der nächsten Tankstelle (${esc(near.brand)}, ${km(near.dist)}).`)}</p>
-      <div class="row"><button class="btn" data-route="${esc(smart.id)}">${NAV} Route</button></div>
-    </section>`;
   }
   h += `<div id="when"></div>`;
 

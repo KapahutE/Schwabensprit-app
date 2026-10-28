@@ -4,6 +4,7 @@ Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) 
 
 ## 26.10.2026 – Schlankere Startseite und Verlauf
 - Startseite von 3,2 auf gut 2 Bildschirme verkürzt: „Wann tanken?“ zeigt nur Überschrift und einen Satz (Tank-Rat, Tageszeiten, Prognose und Gesetzestext unter „Mehr“), zweite Karte ohne doppelte Knöpfe, Liste mit 5 statt 10 Einträgen, Sortierung als ein Umschalter (Preis / Nähe / Anfahrt), Legende unter der Liste, Hinweis zur Aktualisierung einzeilig
+- „Günstigste“ und „Lohnt sich am meisten“ zusammengelegt: Die zweite Karte entfällt, stattdessen steht in der Karte „Günstigste“ eine tippbare Zeile „Mit Hin- und Rückfahrt besser: … −6,47 €“ (nur wenn eine andere Tankstelle unterm Strich mindestens 5 ct günstiger ist)
 - Verlauf von 2,7 auf 2,1 Bildschirme: „Wann ändern sich die Preise?“ unter „Details“, Tiefstpreis-Kachel in zwei kurzen Zeilen
 
 ## 20.10.2026 – Vorbereitung der Professionalisierung
