@@ -57,3 +57,5 @@ Stand: 20.10.2026. Ziel: die App von einem persönlichen Werkzeug zu etwas mache
 ## Empfohlene Reihenfolge
 
 Bleibt es bei Familie und Freunden: Stufe 1, etwa ein bis zwei Arbeitstage. Soll es öffentlich werden: zuerst Entscheidung 5 (Tankerkönig anschreiben, denn das braucht Zeit), parallel Stufe 1, danach Stufe 2. Stufe 3 erst, wenn sich die Nutzung zeigt.
+
+Zur kommerziellen Nutzung (Einnahmen, Ausgaben, Recht, Technik, Finanzierung) siehe [`KOMMERZIALISIERUNG.md`](KOMMERZIALISIERUNG.md).

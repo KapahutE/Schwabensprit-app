@@ -3,6 +3,7 @@
 Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) steht in den Einstellungen unter „Anzeige-Diagnose“.
 
 ## 30.10.2026 – Regeladresse und Ortswahl
+- Überlegungen zur Kommerzialisierung: `docs/KOMMERZIALISIERUNG.md` (Datenzugang, Einnahmen und Ausgaben mit Modellrechnung, Recht, Technik, Finanzierung, Fahrplan mit Prüfpunkten)
 - Einstellungen: **Regeladresse** (Adresse suchen oder „Standort übernehmen“), nur auf dem Gerät gespeichert; sie gilt beim Start der App, für den Tankbuch-Vergleich und als Start in der Route. „Meine Homebase“ entfällt
 - Ortswahl oben: **Aktueller Standort**, **Adresse eingeben** (Suche), Regeladresse und zuletzt benutzte Orte statt der Liste der Bases; „Als Regeladresse merken“; Hinweis, bis wie viele km die Daten am Ort vollständig vorliegen
 - Erster Start: die Ortswahl öffnet sich von selbst; die bisherige Base wird einmalig zur Regeladresse
