@@ -8,7 +8,6 @@ Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) 
 - Reichweitenprüfung: Tankstellen jenseits von 90 % der Restreichweite sind „außer Reichweite“ und zählen nicht als günstigste; bei keiner erreichbaren Tankstelle ein eigener Hinweis
 - Einstellungen: „Tankgröße (Liter)“ und „Akkugröße E-Modus (kWh)“ eindeutig benannt; der alte Tank-Rat-Schalter entfällt (Übernahme der Auswahl)
 - Konzept und Berechnungen: `docs/TANKFUELLSTAND.md`; neue Prüfungen (Rechnung, Ablauf, Bedienung, Route, Barrierefreiheit)
-- Entscheidung: Das Daten-Repository wird nicht öffentlich betrieben (privat); Dokumentation angepasst (`docs/DIENSTE.md`)
 - Neue Homebase G (Göppingen, Hermann-Hesse-Realschule, 25 km) im Daten-Repository; Daten und Verlauf bauen sich mit den nächsten Abrufen auf
 
 ## 26.10.2026 – Schlankere Startseite und Verlauf

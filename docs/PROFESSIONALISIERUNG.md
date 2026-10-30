@@ -20,14 +20,14 @@ Stand: 20.10.2026. Ziel: die App von einem persönlichen Werkzeug zu etwas mache
 2. **Lizenz des eigenen Codes** (z. B. MIT, GPL oder „alle Rechte vorbehalten“). Ohne Lizenzdatei gilt „alle Rechte vorbehalten“. Ich habe keine festgelegt.
 3. **Name und Marke** „Schwabensprit“ (Markenrecherche, Domain). Ich habe nichts geprüft.
 4. **Verantwortlicher für Datenschutz und Impressum** (Name, Anschrift, E-Mail): Entwürfe liegen in `docs/recht/` mit Platzhaltern; ob ein Impressum nötig ist, hängt von der Art des Angebots ab (privat/nicht geschäftsmäßig oder nicht) und sollte geprüft werden.
-5. **Entschieden (30.10.2026): Daten-Repository privat** – statt Tankerkönig anzuschreiben. Zu tun: Sichtbarkeit in den GitHub-Einstellungen umstellen (nur der Eigentümer kann das), Schlüssel der Geräte prüfen (Fine-grained Token mit Contents: Read), Actions-Minuten beobachten. Vorher war es öffentlich lesbar; Spiegeln und öffentliches Bereitstellen der Daten braucht laut Bedingungen eine Absprache (`DIENSTE.md`). Bei einem öffentlichen Angebot ohnehin nötig.
+5. **Tankerkönig anschreiben oder das Daten-Repository auf privat stellen:** Es ist öffentlich lesbar; Spiegeln und öffentliches Bereitstellen der Daten braucht laut Bedingungen eine Absprache (`DIENSTE.md`). Bei einem öffentlichen Angebot ohnehin nötig.
 6. **Budget** für Betrieb (Domain, Karten-/Routing-Anbieter, ggf. kleiner Server) und die Frage, ob Daten bei Dritten liegen dürfen (z. B. externer Zeitgeber).
 
 ## Stufe 1 – Familie und Freunde (wenige Nutzer, kleiner Aufwand)
 
 | Schritt | Warum | Aufwand |
 |---|---|---|
-| Zugang vereinfachen: Die App liest die (öffentlichen) Daten ohne Schlüssel über `raw.githubusercontent.com`; ein Schlüssel nur noch für den Knopf „Abruf starten“. Sonst pro Person ein nur lesender, befristeter Schlüssel (Contents: Read) | Heute braucht jeder einen eigenen Schlüssel, obwohl die Daten öffentlich liegen. Entfällt, weil das Repository privat wird (Entscheidung 30.10.2026): jedes Gerät braucht den Schlüssel weiterhin | klein |
+| Zugang vereinfachen: Die App liest die (öffentlichen) Daten ohne Schlüssel über `raw.githubusercontent.com`; ein Schlüssel nur noch für den Knopf „Abruf starten“. Sonst pro Person ein nur lesender, befristeter Schlüssel (Contents: Read) | Heute braucht jeder einen eigenen Schlüssel, obwohl die Daten öffentlich liegen. Entfällt, wenn das Repository privat wird | klein |
 | Leaflet selbst hosten statt unpkg | eine Abhängigkeit weniger, Datenschutz (kein Dritter beim Laden) | klein |
 | Marken-Logos selbst mitliefern statt Google-Favicons | Datenschutz; Markenrechte klären | mittel |
 | Externer Zeitgeber für den Abruf (z. B. cron-job.org ruft `workflow_dispatch` auf) oder das Programm auf einem eigenen kleinen Rechner (`crontab.example`, `tankpreise.service` liegen im Daten-Repository) | GitHub-Zeitplan liefert nur etwa alle 30 Min. statt 15 | klein |
