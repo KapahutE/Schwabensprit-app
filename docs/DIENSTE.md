@@ -32,3 +32,21 @@ Stand: 20.10.2026. Quelle sind die jeweils genannten Seiten der Anbieter; das is
 - OSMF: https://operations.osmfoundation.org/policies/tiles/ und https://operations.osmfoundation.org/policies/nominatim/
 - GitHub Pages: https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits
 - E-Control: https://api.e-control.at/sprit/1.0/doc
+
+## Zulassung bei der MTS-K (Verbraucher-Informationsdienst) – geprüft am 30.10.2026
+Die Preisdaten stammen von der Markttransparenzstelle für Kraftstoffe (MTS-K) beim Bundeskartellamt. Direkten Zugang bekommen nur **zugelassene Verbraucher-Informationsdienste (VID)**; Tankerkönig ist einer davon (Liste „Tank-Apps“ beim Bundeskartellamt), die freie Tankerkönig-API ist der Weg für alle anderen. Quellen: § 47k GWB, §§ 5–7 MTS-Kraftstoff-Verordnung, Bundesportal (Leistung 99070011006000), Seiten und Merkblätter des Bundeskartellamts zur Zulassung (Hilfestellung zur Antragsgestaltung 12/2023, Modalitäten des Datenbezugs 07/2023, Informationsblatt zur Datenverwendung 02/2025). Keine Rechtsberatung.
+
+| Frage | Ergebnis |
+|---|---|
+| Voraussetzungen (§ 6 MTSKraftV) | Glaubhaft machen: Daten dienen der **Verbraucherinformation über die bundesweit aktuellen Preise**; das Angebot ist **auf Dauer** angelegt, **bundesweit verfügbar** und **nicht auf einen bestimmten Nutzerkreis beschränkt**. Laut Hilfestellung muss es **alle Tankstellen bundesweit** umfassen und **bundesweit abrufbar** sein |
+| Passt Schwabensprit heute? | **Nein.** Die App deckt eine Region ab (Raum Stuttgart) und wird privat genutzt. Das Bundeskartellamt beschreibt Dienste, die sich auf eine Region oder Personengruppe beschränken, ausdrücklich als solche, die **nicht** zugelassen sind, aber Daten über einen VID (z. B. Tankerkönig) für Verbraucherinformation beziehen können |
+| Antrag | formlos oder online (Bundesportal, dafür elektronischer Ausweis); E-Mail `mts-kraftstoffe@bundeskartellamt.bund.de`, Tel. +49 228 9499-525, Post: Bundeskartellamt, Markttransparenzstelle für Kraftstoffe, Kaiser-Friedrich-Straße 16, 53113 Bonn. Inhalt: Name, Anschrift, Bezeichnung des Dienstes, Kontaktperson, Verantwortlicher nach DDG/MStV; Darstellung von Medium, Funktion, Zielgruppe, Start und Dauerhaftigkeit, räumlicher Verfügbarkeit, Aktualisierungshäufigkeit, Geschäftsmodell; Erklärung, dass die Daten nicht für die Mineralölwirtschaft verwendet werden |
+| Kosten, Dauer | keine Gebühren; Bearbeitung in der Regel **6 bis 12 Monate** |
+| Pflichten nach der Zulassung | Datenbezug nur über die Plattform **Mobilithek** (Konto, Datenangebot; Abruf „Client Pull“ per SOAP oder HTTPS, XML nach dem MTS-K-Datenmodell, Container BASE64/GZIP; Aktualisierung höchstens im Minutentakt); Daten **unverändert** und stets aktuell veröffentlichen, nicht löschen oder manipulieren, Preise mit Grunddaten der Tankstelle; **Quellenangabe** mit MTS-K-Logo; **Beschwerdestelle** mit Kontaktdaten in der App und **wöchentlich** (montags, auch als Leermeldung) die Beschwerden über die Mobilithek an die MTS-K; Änderungen der Angaben sofort melden |
+| Verwendung der Daten | ausschließlich Verbraucherinformation; **keine** Weitergabe an Mineralölwirtschaft, Tankstellenbetreiber, Verbände oder IT-Dienstleister der Branche; auch Analysen oder aufbereitete und aggregierte Daten dürfen nicht zu anderen Zwecken angeboten werden. Verstöße: Datenweitergabe wird eingestellt oder die Zulassung entzogen |
+
+**Folgerungen**
+- Ein eigener Zulassungsantrag setzt ein **bundesweites, öffentliches, dauerhaftes Angebot** mit allen rund 14.000 Tankstellen voraus (eigener Betrieb mit Mobilithek-Anbindung, Beschwerdestelle, Impressum und Datenschutz, nicht auf GitHub Pages/Actions zu leisten). Das ist ein neues Projekt, kein Ausbau der Region.
+- Für die regionale App bleibt der Weg über **Tankerkönig** (freie API oder individuelle Lösung). Wer Daten von einem VID bezieht, darf sie nur zur Verbraucherinformation verwenden; ein **öffentlich lesbares** Daten-Repository (auch für Mineralölunternehmen und deren Dienstleister abrufbar) ist damit heikel (vgl. Abschnitt „Tankerkönig entscheidet über öffentliche Daten“ oben).
+- Kommerzielle Nutzung ist im VID-Modell möglich (viele zugelassene Dienste finanzieren sich über Werbung oder Abos; das Geschäftsmodell ist im Antrag darzustellen), aber nur mit bundesweitem Angebot.
+

@@ -28,7 +28,7 @@ ich betreibe privat und ohne Gewinnabsicht eine kleine Web-App („Schwabensprit
 
 **Zum Schluss noch eine grundsätzliche Frage:** Wäre aus Ihrer Sicht auch eine **kommerzielle Nutzung** möglich, etwa wenn die App später mit Werbung oder gegen Entgelt angeboten würde [nach Bedarf anpassen]? Und welche **Rahmenbedingungen** würden dafür gelten (Vertrag, Kosten, Abfragekontingent, Speichern und Weitergabe aufbereiteter Daten, Nutzung des Archivs, Namensnennung, Haftung)?
 
-Falls das mit Ihnen nicht möglich ist: **Woher beziehen Sie Ihre Daten?** Auf Ihrer Seite steht, dass die Markttransparenzstelle für Kraftstoffe (MTS-K) beim Bundeskartellamt den Zugang ausschließlich lizenzierten Spritpreis-Informationsdiensten gewährt. Könnten Sie mir sagen, an wen ich mich dort wenden könnte und ob es eine andere Bezugsquelle für den Raum Stuttgart–Ulm–Tübingen gibt?
+Mir ist bekannt, dass die Markttransparenzstelle für Kraftstoffe (MTS-K) den Datenbezug nur zugelassenen Verbraucher-Informationsdiensten gewährt, deren Angebot bundesweit verfügbar und nicht auf einen Nutzerkreis beschränkt ist. Mein Angebot ist regional, daher kommt für mich nur der Weg über Ihre API oder eine individuelle Lösung mit Ihnen in Frage. **Falls das mit Ihnen nicht möglich ist:** Gibt es aus Ihrer Sicht eine andere zulässige Bezugsquelle oder Kooperation für den Raum Stuttgart–Ulm–Tübingen?
 
 Ich bestätige, dass ich weder Mineralölunternehmen noch Tankstellenbetreiber bin und auch nicht für solche tätig bin. Über eine kurze Antwort, gern in Textform, würde ich mich sehr freuen.
 
@@ -42,10 +42,11 @@ Mit freundlichen Grüßen
 
 ## Hintergrund zu den Schlussfragen (nicht Teil der E-Mail)
 Laut [creativecommons.tankerkoenig.de](https://creativecommons.tankerkoenig.de) (abgerufen am 30.10.2026):
+- **Geprüft am 30.10.2026:** Die Zulassung als VID setzt ein bundesweites, nicht auf einen Nutzerkreis beschränktes Angebot voraus (Einzelheiten in `docs/DIENSTE.md`). Deshalb fragt die Mail nicht mehr nach der Datenquelle, sondern nach einer Kooperation oder anderen zulässigen Quelle.
 - **Datenquelle:** Alle rund 14.000 Tankstellen in Deutschland melden die Preise für Super E5, Super E10 und Diesel an die **Markttransparenzstelle für Kraftstoffe (MTS-K)**, eine Abteilung des Bundeskartellamts. Der Zugang zu diesen Daten ist über diese Behörde **ausschließlich lizenzierten Spritpreis-Informationsdiensten** möglich. Die freie API von Tankerkönig ist der Weg für alle anderen.
 - **Auflagen der MTS-K** gelten auch für Tankerkönig-Nutzer: Die Daten dürfen weder unmittelbar an Mineralölunternehmen und Tankstellenbetreiber (einschließlich verbundener Unternehmen) noch an für sie tätige IT-Dienstleister gegeben werden.
 - **Kommerziell:** Tankerkönig bietet einen „Kommerziellen Service“ mit individueller Lösung (Massenabfragen, Daten auf eigenen Servern, aufbereitete historische Daten). Das Open-Data-Archiv (Preisverläufe, nur für angemeldete Nutzer) steht unter **CC BY-NC-SA 4.0**: nichtkommerzielle Nutzung ist frei, für kommerzielle Nutzung ist ein kostenpflichtiger Vertrag nötig; „SA“ verlangt außerdem, abgeleitete Daten unter gleicher Lizenz weiterzugeben.
-- **Eigener Weg:** Wer die MTS-K-Daten direkt beziehen will, muss laut Tankerkönig als lizenzierter Spritpreis-Informationsdienst bei der MTS-K (Bundeskartellamt) zugelassen sein. Die Bedingungen dafür habe ich nicht geprüft; sie müssten dort erfragt werden.
+- **Eigener Weg:** Wer die MTS-K-Daten direkt beziehen will, muss als Verbraucher-Informationsdienst bei der MTS-K (Bundeskartellamt) zugelassen sein: bundesweites, öffentliches, dauerhaftes Angebot, keine Gebühren, Bearbeitung 6 bis 12 Monate, Datenbezug über die Mobilithek (siehe `docs/DIENSTE.md`).
 
 ## Vor dem Absenden prüfen
 - Platzhalter in eckigen Klammern ausfüllen; den **API-Schlüssel nicht** in die E-Mail schreiben.
