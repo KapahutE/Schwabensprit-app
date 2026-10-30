@@ -39,6 +39,7 @@ Klassische Skripte ohne Build-Schritt; alle teilen sich den globalen Gültigkeit
 | `index.html` | Gerüst, Dialoge, Content-Security-Policy (Meta-Tag) |
 | `app.css` | Aussehen (hell/dunkel), Ebenen (z-index), Tippflächen |
 | `js/grund.js` | Speicher (`store`, IndexedDB `kv`), Daten laden (`fetchData`: Netz → Zwischenspeicher), Ort/Radius, Bausteine, Diagramme, Bereiche, Einstellungen, Installation, Service Worker |
+| `js/regel.js` | Regeladresse (lokal, `home`), Ortswahl, zuletzt benutzte Orte, nutzbarer Radius je Ort (`coverKm`) |
 | `js/fuellstand.js` | Tankfüllstand/Akkustand: nötige Menge, Reichweite, Kosten mit Anfahrt (rein), Auswahl, Dialog – [Konzept](TANKFUELLSTAND.md) |
 | `js/preise.js` | Bereich Preise, „Wann tanken?“, Tank-Rat, Karte, Detailansicht |
 | `js/verlauf.js` | Auswertung, Bereich Verlauf, Wochenreports |

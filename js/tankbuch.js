@@ -35,6 +35,11 @@ async function tbLoad() {
 try { navigator.storage?.persist?.(); } catch {}
 
 const homeBase = () => {
+  const h = homeAddr();   // Regeladresse: das Gebiet, in dem sie liegt
+  if (h) {
+    const d = (b) => distKm(b.lat, b.lng, h.lat, h.lng), c = bases.filter((b) => d(b) <= b.radius_km + 0.05).sort((x, y) => d(x) - d(y))[0];
+    if (c) return c;
+  }
   const id = store.get("homeBase", "");
   return bases.find((b) => b.id === id) || bases.find((b) => /^homebase/i.test(b.name)) || bases[0] || null;
 };
@@ -323,7 +328,7 @@ function celebrate(e) {
   const v = verdictOf(e), area = e.cmp?.baseName || homeBase()?.name || "der Homebase";
   if (!v) {
     toast(e.cmp?.premium ? "Gespeichert ✓ – Premium-Sorte, daher ohne Preisvergleich."
-      : e.cmp?.outside ? "Gespeichert ✓ – die Tankstelle liegt außerhalb deiner Bases, daher ohne Preisvergleich."
+      : e.cmp?.outside ? "Gespeichert ✓ – die Tankstelle liegt außerhalb des Datengebiets, daher ohne Preisvergleich."
       : e.cmp?.none ? "Gespeichert ✓ – für diesen Zeitpunkt gibt es keine Vergleichsdaten." : "Gespeichert ✓", 5000);
     return;
   }

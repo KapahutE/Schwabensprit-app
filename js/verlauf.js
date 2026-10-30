@@ -118,7 +118,7 @@ function renderAnalysis() {
   if (!elA && !$("#when")) return;
   if (view.live || !view.base) {
     noonCtx = null; anaSum = null; renderWhen();
-    if (elA) elA.innerHTML = `<div class="card notice" style="margin-top:6px"><span class="ic">📈</span><div>Verlauf, beste Tankzeit und Wochenreports gibt es für Orte innerhalb von ${bases.map((b) => esc(b.name)).join(", ")}.</div></div>`;
+    if (elA) elA.innerHTML = `<div class="card notice" style="margin-top:6px"><span class="ic">📈</span><div>Verlauf, beste Tankzeit und Wochenreports gibt es für Orte im Datengebiet der App.</div></div>`;
     return;
   }
   const cache = baseCache[view.base.id];

@@ -40,10 +40,9 @@ let onlyOpen = store.get("onlyOpen", "0") === "1";
 let evMode = store.get("ev", "0") === "1";   // E-Modus: Ladestationen statt Tankstellen (js/strom.js)
 let sortBy = store.get("sortBy", "price");
 let viewMode = store.get("viewMode", "list");
-// Ort: {mode: "base"|"gps"|"place", baseId?, lat?, lng?, label?}
+// Ort: {mode: "home"|"gps"|"place"|"base", baseId?, lat?, lng?, label?}; „home“ = Regeladresse (regel.js), „base“ nur noch intern (Erststart, Favoriten)
 let loc = store.getJ("loc", { mode: "base", baseId: null });
 let radius = Number(store.get("radius", "10"));
-let lastPlace = store.getJ("lastPlace", null);
 
 let bases = [], view = null, detailId = null, dataMode = null;
 
@@ -147,9 +146,10 @@ async function loadBases() {
 
 // ---- Ort & Quelle bestimmen
 function center() {
+  if (loc.mode === "home") { const h = homeAddr(); return h ? { lat: h.lat, lng: h.lng, label: h.label } : null; }
   if (loc.mode === "base") {
     const b = bases.find((x) => x.id === loc.baseId) || bases[0];
-    return b ? { lat: b.lat, lng: b.lng, label: (b.name + b.place).length <= 20 ? `${b.name} · ${b.place}` : b.name } : null;
+    return b ? { lat: b.lat, lng: b.lng, label: placeLabel(b) } : null;
   }
   return loc.lat != null ? { lat: loc.lat, lng: loc.lng, label: loc.label } : null;
 }
@@ -301,9 +301,11 @@ async function load(force = false, liveForce = force) {
   if (evMode && force) Strom.invalidate();   // überholte Ladungen (z. B. langsamer Standort) dürfen nichts mehr ändern
   if (force) healthAt = 0;
   if (view && !view.error) $("#main").classList.add("busy");
+  startLoc();   // Kaltstart: Regeladresse
   const gpsP = loc.mode === "gps" ? getPosition().then((p) => ({ p }), (e) => ({ e })) : null;   // Standort parallel zu den Daten
-  // Preise der zuletzt gewählten Base gleich mit der Base-Liste anfragen (spart beim Start eine Runde)
-  const preId = loc.mode === "base" && loc.baseId && !baseCache[loc.baseId] ? loc.baseId : null;
+  // Preise des zuletzt benutzten Gebiets gleich mit der Gebiets-Liste anfragen (spart beim Start eine Runde)
+  const preBase = loc.mode === "base" ? loc.baseId : loc.mode === "home" ? store.get("lastBase", "") : "";
+  const preId = preBase && !baseCache[preBase] ? preBase : null;
   const preP = preId ? loadBaseData({ id: preId }).catch(() => null) : null;
   try {
     if (!bases.length || force) await loadBases();
@@ -313,18 +315,22 @@ async function load(force = false, liveForce = force) {
     return render();
   }
   if (seq !== loadSeq) return;
-  if (loc.mode === "base" && !bases.find((b) => b.id === loc.baseId)) loc = { mode: "base", baseId: bases[0]?.id };
+  migrateHome();   // bisherige Base → Regeladresse (einmalig)
+  const askPick = needLocPick() || (loc.mode === "home" && !homeAddr());
+  if (loc.mode === "home" && !homeAddr()) loc = { mode: "base", baseId: null, auto: true };
+  if (loc.mode === "base" && !bases.find((b) => b.id === loc.baseId)) loc = { mode: "base", baseId: bases[0]?.id, auto: true };
   if (loc.mode === "gps" && gpsP) {
     const g = await gpsP;
     if (seq !== loadSeq) return;
     if (g.p) loc = { mode: "gps", lat: g.p.latitude, lng: g.p.longitude, label: "Mein Standort" };
-    else { toast(g.e.message, 5000); if (loc.lat == null) loc = { mode: "base", baseId: bases[0]?.id }; }
+    else { toast(g.e.message, 5000); if (loc.lat == null) loc = homeAddr() ? { mode: "home" } : { mode: "base", baseId: bases[0]?.id, auto: true }; }
   }
   // Standort nur auf ca. 100 m gerundet speichern (der genaue Wert bleibt nur im Arbeitsspeicher)
   store.setJ("loc", loc.mode === "gps" ? { ...loc, lat: +loc.lat.toFixed(3), lng: +loc.lng.toFixed(3) } : loc);
   const c = center();
   if (!c) { view = { error: new Error("Keine Bases konfiguriert") }; return render(); }
   const src = pickSource(c);
+  if (src.base) store.set("lastBase", src.base.id);
   try {
     let data, reports = [];
     // Live-Preise nur holen, wenn Preise/Verlauf sie zeigen – sonst später beim Wechsel dorthin
@@ -345,6 +351,7 @@ async function load(force = false, liveForce = force) {
   if (detailId) renderDetail();
   if (view.stations) preloadLogos(view.stations);
   if (view.base && !view.error) loadHistory().then(() => { renderAnalysis(); if (detailId) renderDetail(); });
+  if (askPick) askLocOnce();   // noch kein Ort gewählt: Ortswahl öffnen
 }
 
 const byId = (id) => view?.stations?.find((s) => s.id === id);
@@ -797,28 +804,6 @@ function mapAlt(appleUrl, s) {
   return `<a class="btn secondary" href="geo:${ll}?q=${ll}(${encodeURIComponent(String(s.brand || s.op || "Ziel").replace(/[()]/g, ""))})">Andere Karten-App</a>`;
 }
 
-// ---- Ortswahl
-function renderLocDialog() {
-  $("#locBases").innerHTML = bases.map((b) => `<button class="opt ${loc.mode === "base" && loc.baseId === b.id ? "on" : ""}" data-base="${esc(b.id)}">
-    <div class="ic">${esc(b.id)}</div><div class="t"><div>${esc(b.name)}</div><div class="sub">${esc(b.place)} · bis ${b.radius_km} km</div></div><span class="check">✓</span></button>`).join("");
-  $("#optGps").classList.toggle("on", loc.mode === "gps");
-  $("#optPlace").hidden = !lastPlace;
-  if (lastPlace) { $("#placeName").textContent = lastPlace.label; $("#optPlace").classList.toggle("on", loc.mode === "place"); }
-  $("#inRadius").value = radius; $("#radiusVal").textContent = `${radius} km`;
-}
-let locChanged = false;
-function setLoc(l) { loc = l; locChanged = true; store.setJ("loc", loc); renderLocDialog(); }
-$("#btnLoc").addEventListener("click", () => { locChanged = false; renderLocDialog(); $("#searchResults").innerHTML = ""; $("#dlgLoc").showModal(); });
-$("#locBases").addEventListener("click", (e) => { const b = e.target.closest("[data-base]"); if (b) setLoc({ mode: "base", baseId: b.dataset.base }); });
-$("#optGps").addEventListener("click", async () => {
-  $("#gpsSub").textContent = "Standort wird ermittelt …";
-  try {
-    const p = await getPosition();
-    setLoc({ mode: "gps", lat: p.latitude, lng: p.longitude, label: "Mein Standort" });
-    $("#gpsSub").textContent = "per Standortfreigabe";
-  } catch (e) { $("#gpsSub").textContent = e.message; }
-});
-$("#optPlace").addEventListener("click", () => lastPlace && setLoc({ mode: "place", ...lastPlace }));
 // Abruf mit Zeitlimit (hängende Mobilverbindung)
 // Zeitachsen der Daten (changes.json, forecast.json): Minuten ab „start“ in Ortszeit, wie die Wanduhr –
 // über die Zeitumstellung hinweg richtig (der Datenabruf rechnet ebenso)
@@ -869,34 +854,6 @@ async function geoSearch(q, cc = GEO_DE) {
   geoCache.set(k, res);
   return res;
 }
-$("#searchForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const q = $("#inSearch").value.trim(), btn = $("#searchForm button");
-  if (!q || btn.disabled) return;
-  btn.disabled = true;
-  $("#searchResults").innerHTML = `<div class="sub" style="padding:8px 4px">Suche …</div>`;
-  try {
-    const res = await geoSearch(q);
-    $("#searchResults").innerHTML = res.length ? res.map((x, i) =>
-      `<button class="opt" data-hit="${i}"><div class="ic pl">⌖</div><div class="t"><div>${esc(x.label)}</div><div class="sub">${esc(x.sub)}</div></div></button>`).join("")
-      : `<div class="sub" style="padding:8px 4px">Nichts gefunden.</div>`;
-    $("#searchResults").onclick = (ev) => {
-      const b = ev.target.closest("[data-hit]"); if (!b) return;
-      const x = res[b.dataset.hit];
-      lastPlace = { lat: x.lat, lng: x.lng, label: x.label };
-      store.setJ("lastPlace", lastPlace);
-      $("#searchResults").innerHTML = ""; $("#inSearch").value = "";
-      setLoc({ mode: "place", ...lastPlace });
-    };
-  } catch { $("#searchResults").innerHTML = `<div class="sub" style="padding:8px 4px">Suche gerade nicht möglich.</div>`; }
-  finally { btn.disabled = false; }
-});
-$("#inRadius").addEventListener("input", (e) => {
-  radius = Number(e.target.value); store.set("radius", String(radius));
-  $("#radiusVal").textContent = `${radius} km`; locChanged = true;
-});
-$("#btnLocDone").addEventListener("click", () => $("#dlgLoc").close());
-$("#dlgLoc").addEventListener("close", () => { if (locChanged) load(); });
 
 // ---- Statusmeldung: veraltete Daten oder hängende/fehlgeschlagene Läufe bei GitHub
 let healthHtml = "", healthAt = 0, healthKey = "";
@@ -999,8 +956,7 @@ function openSettings() {
   $("#inDialect").checked = SW();
   $("#inRtKeep").checked = store.get("rtKeep", "1") === "1";
   $("#inTokExp").value = store.get("tokenExp", "");
-  $("#inHome").innerHTML = bases.map((b) => `<option value="${esc(b.id)}">${esc(b.name)} · ${esc(b.place)}</option>`).join("");
-  if (homeBase()) $("#inHome").value = homeBase().id;
+  openHomeSetting();
   $("#inTank").value = fmtNum(TANK(), 0);
   $("#inCons").value = fmtNum(CONS(), 1);
   $("#inKwh").value = fmtNum(parseFloat(String(store.get("kwh", "30")).replace(",", ".")) || 30, 0);
@@ -1018,10 +974,7 @@ function saveSettings() {
   store.set("rtKeep", $("#inRtKeep").checked ? "1" : "0");
   if (!$("#inRtKeep").checked) store.set("rtLast", "");
   store.set("tokenExp", $("#inTokExp").value);
-  if ($("#inHome").value && $("#inHome").value !== store.get("homeBase", homeBase()?.id || "")) {
-    store.set("homeBase", $("#inHome").value);
-    tbRecompute(true).then((n) => n && toast(`${TB_NAME()}: ${n} Vergleiche mit der neuen Homebase neu berechnet.`));
-  } else if ($("#inHome").value) store.set("homeBase", $("#inHome").value);
+  commitHome();
   store.set("tank", $("#inTank").value || "50");
   store.set("cons", $("#inCons").value || "7");
   store.set("kwh", $("#inKwh").value || "30");
@@ -1030,11 +983,10 @@ function saveSettings() {
 }
 // Ortsdaten löschen: gesuchte Orte, gemerkte Strecken, letzte Route, Start/Ziel, Live-Zwischenspeicher, Preise-Ort
 $("#btnGeoClear").addEventListener("click", () => {
-  if (!confirm("Alle gespeicherten Ortsdaten auf diesem Gerät löschen?\n\nZuletzt gesuchte Orte, gemerkte Strecken, letzte Route, Start/Ziel, gesuchter Ort, Live-Zwischenspeicher und gespeicherte Ladestationen.")) return;
-  for (const k of ["rtRecent", "rtSaved", "rtLast", "rtA", "rtB", "liveCache", "lastPlace"]) { try { localStorage.removeItem(k); } catch {} }
+  if (!confirm("Alle gespeicherten Ortsdaten auf diesem Gerät löschen?\n\nRegeladresse, zuletzt benutzte Orte, gemerkte Strecken, letzte Route, Start/Ziel, Live-Zwischenspeicher und gespeicherte Ladestationen.")) return;
+  for (const k of ["rtRecent", "rtSaved", "rtLast", "rtA", "rtB", "liveCache", "lastPlace", "recentPlaces", "home", "lastBase", "homeBase"]) { try { localStorage.removeItem(k); } catch {} }
   kv.clear();   // gespeicherte Ladestationen und Preisdaten (Zwischenspeicher)
-  lastPlace = null;
-  if (loc.mode !== "base") { loc = { mode: "base", baseId: bases[0]?.id }; store.setJ("loc", loc); }
+  loc = { mode: "base", baseId: bases[0]?.id, auto: true }; store.setJ("loc", loc);
   Route.reset();
   $("#dlg").close();
   toast(say("Ortsdaten gelöscht ✓", "Ortsdaten gelöscht ✓"));

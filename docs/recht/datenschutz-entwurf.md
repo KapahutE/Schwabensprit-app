@@ -12,7 +12,7 @@
 
 ## 3. Daten auf deinem Gerät
 
-Folgendes wird ausschließlich im Speicher deines Geräts (Browser bzw. installierte App) abgelegt und nicht an den Verantwortlichen übertragen: Einstellungen, Favoriten, eigene Ladekarten-Preise, das Spritbüchle (Tankbuch), gemerkte Strecken, zuletzt gesuchte Orte, der zuletzt geladene Stand der Preise und Ladestationen (Zwischenspeicher für schnellen Start und Betrieb ohne Netz) sowie, wenn du sie einträgst, dein Zugangsschlüssel für das Daten-Repository. Mit „Ortsdaten löschen“ in den Einstellungen kannst du Standort-, Routen- und Zwischenspeicherdaten löschen; weitere Daten löschst du über die Einstellungen deines Browsers bzw. durch Entfernen der App. [Rechtsgrundlage für die technisch erforderliche Speicherung: prüfen, § 25 Abs. 2 TDDDG.]
+Folgendes wird ausschließlich im Speicher deines Geräts (Browser bzw. installierte App) abgelegt und nicht an den Verantwortlichen übertragen: Einstellungen, Favoriten, eigene Ladekarten-Preise, das Spritbüchle (Tankbuch), gemerkte Strecken, die Regeladresse (nur lokal, auch als „Mein Standort“ nur auf etwa 100 m genau), zuletzt benutzte Orte, der zuletzt geladene Stand der Preise und Ladestationen (Zwischenspeicher für schnellen Start und Betrieb ohne Netz) sowie, wenn du sie einträgst, dein Zugangsschlüssel für das Daten-Repository. Mit „Ortsdaten löschen“ in den Einstellungen kannst du Standort-, Routen- und Zwischenspeicherdaten löschen; weitere Daten löschst du über die Einstellungen deines Browsers bzw. durch Entfernen der App. [Rechtsgrundlage für die technisch erforderliche Speicherung: prüfen, § 25 Abs. 2 TDDDG.]
 
 Belege, die du im Spritbüchle fotografierst, werden **auf dem Gerät** ausgelesen (Texterkennung) und nicht hochgeladen.
 

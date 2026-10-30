@@ -343,6 +343,7 @@ label.check input{width:20px;height:20px;padding:0;flex:none;accent-color:var(--
 .opt .ic{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;flex:none;font-weight:800;font-size:14px;color:var(--on-acc);background:var(--acc)}
 .opt .ic.gps{background:#34c759;color:#fff}
 .opt .ic.pl{background:#8e8e93;color:#fff}
+.opt .ic.home{background:var(--seg);font-size:16px}
 .opt .t{flex:1;min-width:0}.opt .t div:first-child{font-weight:650}
 .opt .check{color:var(--acc-ink);font-weight:800;visibility:hidden}
 .opt[hidden]{display:none}
@@ -480,3 +481,7 @@ details.vmore{margin:14px 4px 0;font-size:14px}details.vmore summary{font-size:1
 .gauge.res{background:linear-gradient(90deg,var(--hi) calc(var(--f)*100%),transparent 0)}
 .rtlevel{margin-top:4px}
 .rtitem .item.closed .d,.list .item.closed .d{color:var(--muted)}
+
+.homenow{display:flex;align-items:center;gap:10px;justify-content:space-between;margin:2px 0 8px}.homenow b{min-width:0;overflow-wrap:anywhere}.homenow .btn{padding:8px 12px;flex:none}
+#radiusHint{margin:6px 4px 0}#radiusHint.warn{color:var(--fg)}#radiusHint.warn::before{content:"⚠ "}
+#btnSetHome{margin-top:10px}#btnHomeGps{margin-top:8px}

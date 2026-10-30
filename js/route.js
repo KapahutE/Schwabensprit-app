@@ -9,7 +9,7 @@
 const Route = (() => {
   const CORRS = [1, 2, 5], LIVE_KEEP = 30 * 60000, TK_RAD = 25, BASE_RETRY = 60000;
   const S = {
-    a: store.getJ("rtA", { kind: "gps", label: "Mein Standort" }),   // {kind: gps|base|place, label, sub?, lat?, lng?, baseId?}
+    a: store.getJ("rtA", { kind: "gps", label: "Mein Standort" }),   // {kind: gps|home|base|place, label, sub?, lat?, lng?, baseId?}
     b: store.getJ("rtB", null),
     corr: CORRS.includes(+store.get("rtCorr", "2")) ? +store.get("rtCorr", "2") : 2,
     sort: ["route", "price", "value"].includes(store.get("rtSort", "")) ? store.get("rtSort", "") : "route",
@@ -131,6 +131,11 @@ const Route = (() => {
       // auf ca. 100 m gerundet: genug für die Route, ohne den genauen Standort weiterzugeben
       try { const c = await getPosition(); return { lat: +c.latitude.toFixed(3), lng: +c.longitude.toFixed(3) }; }
       catch (e) { throw Object.assign(e, { user: true }); }
+    }
+    if (p.kind === "home") {   // Regeladresse (folgt Änderungen in den Einstellungen)
+      const h = homeAddr();
+      if (!h) throw Object.assign(new Error("Keine Regeladresse festgelegt (⚙ Einstellungen)."), { user: true });
+      return { lat: h.lat, lng: h.lng };
     }
     if (p.kind === "base") {
       const b = bases.find((x) => x.id === p.baseId);
@@ -407,9 +412,10 @@ const Route = (() => {
   const whenTxt = (s) => `${km(s.alongKm)} · ${s.exact ? "" : "≈ "}${minTxt(s.toSec / 60)}`;   // Strecken-km und Fahrzeit bis dorthin
   const baseLabel = (b) => (b.name + b.place).length <= 20 ? `${b.name} · ${b.place}` : b.name;   // wie bei der Ortswahl
   const ptIcon = (p) => p?.kind === "gps" ? `<div class="ic gps"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M21.7 2.3a1 1 0 0 0-1.1-.2l-18 8a1 1 0 0 0 .1 1.9l7.4 2 2 7.4a1 1 0 0 0 1.9.1l8-18a1 1 0 0 0-.3-1.2z"/></svg></div>`
+    : p?.kind === "home" ? `<div class="ic home" aria-hidden="true">🏠</div>`
     : p?.kind === "base" ? `<div class="ic">${esc(p.baseId || "B")}</div>` : `<div class="ic pl">⌖</div>`;
   const ptBtn = (w, p) => `<button class="opt rtpt" data-rtpick="${w}" aria-label="${w === "a" ? "Start" : "Ziel"} wählen">${ptIcon(p)}
-    <div class="t"><div class="sub">${w === "a" ? "Start" : "Ziel"}</div><div>${p ? esc(p.label) : `<span class="sub">${say("Ziel wähla …", "Ziel wählen …")}</span>`}</div></div></button>`;
+    <div class="t"><div class="sub">${w === "a" ? "Start" : "Ziel"}</div><div>${p ? esc(p.kind === "home" ? homeAddr()?.label || p.label : p.label) : `<span class="sub">${say("Ziel wähla …", "Ziel wählen …")}</span>`}</div></div></button>`;
 
   function formHtml() {
     const depVal = S.depart ? new Date(S.depart - new Date(S.depart).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
@@ -432,7 +438,7 @@ const Route = (() => {
     if (fb._h !== fh && document.activeElement?.id !== "rtDep") { fb.innerHTML = fh; fb._h = fh; }
     let h = "";
     if (view?.error) h += view.error.setup
-      ? `<div class="card notice warnbox"><span class="ic">🔑</span><div><b>Noch nicht eingerichtet</b><br>${say("Ohne GitHub-Schlüssel gibt's koine Preise vo de Bases.", "Ohne GitHub-Schlüssel gibt es keine Preise aus den Bases.")}<div class="row" style="margin-top:10px"><button class="btn" id="btnSetup">Einrichten</button></div></div></div>`
+      ? `<div class="card notice warnbox"><span class="ic">🔑</span><div><b>Noch nicht eingerichtet</b><br>${say("Ohne GitHub-Schlüssel gibt's koine Preise.", "Ohne GitHub-Schlüssel gibt es keine Preise.")}<div class="row" style="margin-top:10px"><button class="btn" id="btnSetup">Einrichten</button></div></div></div>`
       : `<div class="card notice warnbox"><span class="ic">⚠️</span><div><b>${say("Preise hen se grad net lada lassa", "Preise konnten gerade nicht geladen werden")}</b><br>${esc(view.error.message)} – zum Neuladen nach unten ziehen.</div></div>`;
     if (S.err) h += `<div class="card notice warnbox"><span class="ic">⚠️</span><div>${esc(S.err)}${S.b ? `<div class="row" style="margin-top:10px"><button class="btn secondary" data-rtgo>${say("Nomol versuche", "Erneut versuchen")}</button></div>` : ""}</div></div>`;
     const R = S.route;
@@ -497,7 +503,7 @@ const Route = (() => {
     if (u.km > 0.5) {
       const cool = Math.ceil(tkWait() / 1000);
       const abroad = [R.a, R.b].some((p) => p?.cc && !["de", "at"].includes(p.cc));
-      h += `<div class="card notice"><span class="ic">ℹ️</span><div><b>${say(`Uff ${fmtNum(u.km, 0)} km hen mir koine Preise`, `Für ${fmtNum(u.km, 0)} km fehlen Preise`)}</b> – ${say("dort send koine vo deine Bases.", "dort liegt keine deiner Bases.")}<br>
+      h += `<div class="card notice"><span class="ic">ℹ️</span><div><b>${say(`Uff ${fmtNum(u.km, 0)} km hen mir koine Preise`, `Für ${fmtNum(u.km, 0)} km fehlen Preise`)}</b> – ${say("dort hen mir koine Daten.", "dort liegt kein Datengebiet.")}<br>
         ${abroad ? `${say("Preis gibt's bloß für Deitschland ond Öschtrreich.", "Preise gibt es nur für Deutschland und Österreich.")}<br>` : ""}
         ${key ? `${say("Mit deim Tankerkönig-Schlüssel kasch abschnittsweis Live-Preise lada (oi Abfrag pro Minut).", "Mit deinem Tankerkönig-Schlüssel lassen sich Live-Preise abschnittsweise laden (eine Abfrage pro Minute).")}
           <div class="row" style="margin-top:10px"><button class="btn secondary" data-rtlive${S.liveBusy || cool > 0 ? " disabled" : ""}>${S.liveBusy ? `<span class="spin-dot"></span> ${say("Lädt …", "Lädt …")}` : cool > 0 ? `${say("Nägschder Abschnitt in", "Nächster Abschnitt in")} <span class="rtcool">${cool}</span> s` : say("Nägschda Abschnitt lada", "Nächsten Abschnitt laden")}</button></div>`
@@ -680,7 +686,7 @@ const Route = (() => {
     }
   }
 
-  // ---- Start/Ziel wählen (Dialog): Mein Standort, Bases, zuletzt gesucht, Suche (nur beim Absenden)
+  // ---- Start/Ziel wählen (Dialog): Mein Standort, Regeladresse, zuletzt gesucht, Suche (nur beim Absenden)
   function openPick(w) {
     S.picking = w;
     $("#rtDlgTitle").textContent = w === "a" ? say("Start wähla", "Start wählen") : say("Ziel wähla", "Ziel wählen");
@@ -688,7 +694,7 @@ const Route = (() => {
     const opt = (k, ic, t, sub) => `<button class="opt" data-rtset="${esc(k)}">${ic}<div class="t"><div>${esc(t)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ""}</div></button>`;
     $("#rtDlgBody").innerHTML = `<div class="grouplabel">${say("Schnellwahl", "Schnellwahl")}</div><div class="optgroup">
       ${opt("gps", ptIcon({ kind: "gps" }), "Mein Standort", "per Standortfreigabe")}
-      ${bases.map((b) => opt("base:" + b.id, ptIcon({ kind: "base", baseId: b.id }), b.name, b.place)).join("")}</div>
+      ${homeAddr() ? opt("home", ptIcon({ kind: "home" }), "Regeladresse", homeAddr().label) : ""}</div>
       ${S.recent.length ? `<div class="grouplabel">${say("Zletscht gsucht", "Zuletzt gesucht")}</div><div class="optgroup">${S.recent.map((p, i) => opt("recent:" + i, ptIcon(p), p.label, p.sub)).join("")}</div>` : ""}
       <div class="grouplabel">${say("Ort sucha", "Ort suchen")}</div>`;
     $("#dlgRt").showModal();
@@ -707,6 +713,7 @@ const Route = (() => {
     if (b.dataset.rthit != null) return setPoint(hits[+b.dataset.rthit]);
     const k = b.dataset.rtset;
     if (k === "gps") return setPoint({ kind: "gps", label: "Mein Standort" });
+    if (k === "home") { const h = homeAddr(); return h && setPoint({ kind: "home", label: h.label }); }
     if (k.startsWith("base:")) { const x = bases.find((y) => y.id === k.slice(5)); return x && setPoint({ kind: "base", baseId: x.id, label: baseLabel(x) }); }
     if (k.startsWith("recent:")) return setPoint(S.recent[+k.slice(7)]);
   });

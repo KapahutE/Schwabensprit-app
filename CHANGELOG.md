@@ -2,6 +2,12 @@
 
 Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) steht in den Einstellungen unter „Anzeige-Diagnose“.
 
+## 30.10.2026 – Regeladresse und Ortswahl
+- Einstellungen: **Regeladresse** (Adresse suchen oder „Standort übernehmen“), nur auf dem Gerät gespeichert; sie gilt beim Start der App, für den Tankbuch-Vergleich und als Start in der Route. „Meine Homebase“ entfällt
+- Ortswahl oben: **Aktueller Standort**, **Adresse eingeben** (Suche), Regeladresse und zuletzt benutzte Orte statt der Liste der Bases; „Als Regeladresse merken“; Hinweis, bis wie viele km die Daten am Ort vollständig vorliegen
+- Erster Start: die Ortswahl öffnet sich von selbst; die bisherige Base wird einmalig zur Regeladresse
+- Vorlage für die Anfrage an Tankerkönig (`docs/recht/email-tankerkoenig.md`)
+
 ## 30.10.2026 – Tankfüllstand
 - Neuer Knopf ⛽ neben dem Ort: ¾ · ½ · ¼ · Reserve (50 km Restreichweite) · Nicht angeben (wie bisher), gilt 3 Tage; im E-Modus eigener Akkustand 🔋
 - Ersparnis, Fahrtkosten mit Hin- und Rückfahrt, „Mit Hin- und Rückfahrt besser“, Tank-Rat, 12-Uhr-Hinweis, Route („Nachtanken inkl. Umweg“) und Ladekosten rechnen mit der Menge, die zum vollen Tank fehlt (z. B. ½ bei 50 l → 25 l), statt mit der ganzen Tankgröße

@@ -104,7 +104,7 @@ $("#btnFavClose").addEventListener("click", () => { favReplace = null; $("#dlgFa
 async function openFav(id) {
   if (byId(id)) return openDetail(id);
   const f = favs.find((x) => x.id === id), b = f && favBases(f)[0];
-  if (!b) return toast(store.get("tk", "") ? "Diese Tankstelle liegt außerhalb deiner Bases." : "Kein aktueller Preis – außerhalb deiner Bases. Für Live-Preise unter ⚙ den Tankerkönig-Schlüssel eintragen.", 5000);
+  if (!b) return toast(store.get("tk", "") ? "Diese Tankstelle liegt außerhalb des Datengebiets." : "Kein aktueller Preis – außerhalb des Datengebiets. Für Live-Preise unter ⚙ den Tankerkönig-Schlüssel eintragen.", 5000);
   loc = { mode: "base", baseId: b.id };
   radius = Math.min(25, Math.max(radius, Math.ceil(distKm(b.lat, b.lng, f.lat, f.lng)) + 1));
   store.set("radius", String(radius));
@@ -187,9 +187,9 @@ function preiseHtml() {
       Bei GitHub neu erstellen (oder „Regenerate“) und unter ⚙ eintragen – sonst kommen keine Preise mehr an.
       <div class="row" style="margin-top:10px"><a class="btn secondary" href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener">Zu GitHub</a><button class="btn" id="btnSetup">Einstellungen</button></div></div></div>`;
   if (view.src.type === "partial")
-    h += `<div class="card notice"><span class="ic">ℹ️</span><div><b>Teilweise außerhalb deiner Bases.</b> Es werden nur Tankstellen aus ${esc(view.base.name)} angezeigt. Für vollständige Live-Preise trage unter ⚙ deinen Tankerkönig-Schlüssel ein.</div></div>`;
+    h += `<div class="card notice"><span class="ic">ℹ️</span><div><b>Teilweise außerhalb des Datengebiets.</b> Vollständige Daten liegen hier nur bis ≈ ${coverKm(view.center.lat, view.center.lng)} km vor – wähle einen kleineren Radius oder trage unter ⚙ deinen Tankerkönig-Schlüssel für Live-Preise ein.</div></div>`;
   if (view.src.type === "none")
-    h += `<div class="card notice"><span class="ic">ℹ️</span><div><b>Dieser Ort liegt außerhalb deiner Bases.</b> Für Live-Preise trage unter ⚙ deinen Tankerkönig-Schlüssel ein.</div></div>`;
+    h += `<div class="card notice"><span class="ic">ℹ️</span><div><b>Dieser Ort liegt außerhalb des Datengebiets.</b> Für Live-Preise trage unter ⚙ deinen Tankerkönig-Schlüssel ein.</div></div>`;
 
   const lv = levelFn();
   // Füllstand: Tankstellen außerhalb der Reichweite zählen nicht für „Günstigste“, Ersparnis und „besser mit Anfahrt“

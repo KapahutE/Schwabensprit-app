@@ -94,6 +94,63 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       check("Füllstand: „Nicht angeben“ → wie bisher (volle Tankgröße)", (await tx("#lvlLabel")) === "–" && /bei 50 l ggü\. Ø/.test(await sv()) && await p.evaluate(() => localStorage.getItem("lvl")) === "null");
     }
 
+    // ---- Regeladresse und Ortswahl am Start
+    {
+      const pl = await ctx.newPage(), pe = [];
+      pl.on("pageerror", (e) => pe.push(e.message));
+      await pl.route(/nominatim\.openstreetmap\.org/, (r) => {
+        const ulm = /ulm/i.test(new URL(r.request().url()).searchParams.get("q"));
+        r.fulfill({ status: 200, headers: J, body: JSON.stringify([ulm ? { lat: "48.4011", lon: "9.9876", display_name: "Ulm, Baden-Württemberg, Deutschland", address: { country_code: "de" } }
+          : { lat: "48.6946", lon: "9.2108", display_name: "Marktplatz, Filderstadt, Landkreis Esslingen, Baden-Württemberg, Deutschland", address: { country_code: "de" } }]) });
+      });
+      const chip = () => pl.evaluate(() => document.querySelector("#locLabel").innerText.replace(/\s+/g, " ")), ls = (k) => pl.evaluate((k) => JSON.parse(localStorage.getItem(k)), k);
+      const orig = await p.evaluate(() => localStorage.getItem("home"));
+      await pl.goto(srv.url); await pl.waitForSelector("#main .hero .price", T);
+      check("Regeladresse: die bisherige Base wurde einmalig zur Regeladresse, die App startet darauf (ohne Ortswahl)", (await ls("home"))?.label === "Base H · Leinfelden" && (await ls("loc")).mode === "home" && /^Base H · Leinfelden · \d+ km$/.test(await chip()) && !(await pl.evaluate(() => document.querySelector("#dlgLoc").open)), [await ls("home"), await chip()]);
+      await pl.click("#btnLoc"); await pl.waitForSelector("#dlgLoc[open]");
+      const d = await pl.evaluate(() => ({ bases: !!document.querySelector("#locBases, [data-base]"), gps: !!document.querySelector("#optGps"), home: !document.querySelector("#optHome").hidden, name: document.querySelector("#homeName").innerText, hint: document.querySelector("#locHint").hidden, set: document.querySelector("#btnSetHome").hidden, ph: document.querySelector("#inSearch").placeholder }));
+      check("Ortswahl: Aktueller Standort, Regeladresse und Adresseingabe – keine Liste von Bases", !d.bases && d.gps && d.home && d.name === "Base H · Leinfelden" && d.hint && d.set && /Adresse/.test(d.ph), d);
+      await ctx.grantPermissions(["geolocation"], { origin: new URL(srv.url).origin }); await ctx.setGeolocation({ latitude: 48.5367, longitude: 9.2857 });
+      await pl.click("#optGps"); await pl.waitForFunction(() => document.querySelector("#optGps").classList.contains("on")); await ctx.clearPermissions();
+      const g = await ls("loc");
+      check("Ortswahl: Aktueller Standort wird nur auf ca. 100 m gerundet gespeichert; „Als Regeladresse merken“ erscheint", g.mode === "gps" && g.lat === 48.537 && g.lng === 9.286 && !(await pl.evaluate(() => document.querySelector("#btnSetHome").hidden)), g);
+      await pl.fill("#inSearch", "Marktplatz Filderstadt"); await pl.click("#searchForm button"); await pl.waitForSelector("[data-hit]"); await pl.click('[data-hit="0"]');
+      const w = await pl.evaluate(() => ({ loc: JSON.parse(localStorage.getItem("loc")), recent: JSON.parse(localStorage.getItem("recentPlaces")).map((x) => x.label), home: JSON.parse(localStorage.getItem("home")).label, hint: document.querySelector("#radiusHint").innerText }));
+      check("Ortswahl: manuell eingegebene Adresse wird gewählt und unter „Zuletzt benutzt“ gemerkt, Regeladresse bleibt", w.loc.mode === "place" && w.loc.label === "Marktplatz, Filderstadt" && w.recent[0] === "Marktplatz, Filderstadt" && w.home === "Base H · Leinfelden" && (await pl.$$eval("#locRecent .opt", (a) => a.length)) === 1, w);
+      check("Ortswahl: Hinweis zum nutzbaren Radius (Daten vollständig bis ≈ x km)", /≈ \d+ km/.test(w.hint), w.hint);
+      await pl.click("#btnSetHome"); await pl.waitForTimeout(150); await pl.click("#btnLocDone");
+      await pl.waitForFunction(() => /Filderstadt/.test(document.querySelector("#locLabel").innerText)); await pl.waitForSelector("#main .hero .price", T);
+      check("Regeladresse: „Als Regeladresse merken“ speichert lokal und die App zeigt sie", (await ls("home")).label === "Marktplatz, Filderstadt" && (await ls("loc")).mode === "home" && /^Marktplatz, Filderstadt · \d+ km$/.test(await chip()), [await ls("home"), await chip()]);
+      // Einstellungen: suchen, Eingabetaste sucht (speichert nicht), Abbrechen verwirft, Speichern übernimmt
+      await pl.click("#btnSettings"); await pl.waitForSelector("#dlg[open]");
+      check("Einstellungen: Regeladresse wird angezeigt", (await pl.innerText("#homeNow")) === "Marktplatz, Filderstadt" && !(await pl.evaluate(() => document.querySelector("#btnHomeClear").hidden)));
+      await pl.fill("#inHomeQ", "Ulm"); await pl.press("#inHomeQ", "Enter"); await pl.waitForSelector("[data-homehit]");
+      check("Einstellungen: Eingabetaste im Adressfeld sucht, statt die Einstellungen zu speichern", await pl.evaluate(() => document.querySelector("#dlg").open) && (await pl.$$eval("[data-homehit]", (a) => a.length)) === 1);
+      await pl.click('[data-homehit="0"]');
+      check("Einstellungen: gewählte Adresse steht als neue Regeladresse, noch nicht gespeichert", (await pl.innerText("#homeNow")) === "Ulm, Baden-Württemberg" && (await ls("home")).label === "Marktplatz, Filderstadt");
+      await pl.click("#btnDlgCancel");
+      check("Einstellungen: Abbrechen verwirft die Änderung", (await ls("home")).label === "Marktplatz, Filderstadt");
+      await pl.click("#btnSettings"); await pl.waitForSelector("#dlg[open]"); await pl.fill("#inHomeQ", "Ulm"); await pl.click("#btnHomeSearch"); await pl.waitForSelector("[data-homehit]"); await pl.click('[data-homehit="0"]');
+      await pl.click("#dlg button[value=save]"); await pl.waitForFunction(() => /Ulm/.test(document.querySelector("#locLabel").innerText));
+      await pl.waitForSelector("#main .card.notice", T);
+      check("Einstellungen: Speichern übernimmt die Regeladresse; Ort außerhalb des Datengebiets zeigt den Hinweis", (await ls("home")).label === "Ulm, Baden-Württemberg" && (await ls("home")).lat === 48.4011 && /außerhalb des Datengebiets/.test(await pl.innerText("#main")), await chip());
+      await pl.click("#btnSettings"); await pl.waitForSelector("#dlg[open]"); await pl.click("#btnHomeClear");
+      check("Einstellungen: Entfernen zeigt „nicht festgelegt“", (await pl.innerText("#homeNow")) === "nicht festgelegt" && (await ls("home")).label === "Ulm, Baden-Württemberg");
+      await pl.click("#btnDlgCancel");
+      // Route: Start/Ziel „Regeladresse“
+      await pl.click("#tabbar [data-tab=route]"); await pl.waitForSelector("[data-rtpick=b]"); await pl.click("[data-rtpick=b]"); await pl.waitForSelector("#dlgRt[open]");
+      check("Route: Start/Ziel bieten die Regeladresse (statt der Bases)", (await pl.$$eval("#dlgRt [data-rtset]", (a) => a.map((x) => x.dataset.rtset))).join() === "gps,home", await pl.$$eval("#dlgRt [data-rtset]", (a) => a.map((x) => x.dataset.rtset)));
+      await pl.keyboard.press("Escape");
+      // Erststart ohne gespeicherten Ort: Ortswahl öffnet sich von selbst
+      await pl.evaluate(() => { for (const k of ["loc", "home", "recentPlaces", "lastBase", "homeBase", "lastPlace"]) localStorage.removeItem(k); });
+      await pl.reload(); await pl.waitForSelector("#dlgLoc[open]", T);
+      check("Erststart: ohne gespeicherten Ort öffnet sich die Ortswahl mit Hinweis (Standort oder Adresse)", await pl.evaluate(() => !document.querySelector("#locHint").hidden && !!document.querySelector("#optGps") && !document.querySelector("#locHint").closest("dialog").querySelector("[data-base]")));
+      check("Erststart: Ortswahl bleibt ohne Auswahl erhalten, keine Regeladresse wird erfunden", (await ls("home")) === null);
+      check("Regeladresse: keine Skriptfehler", pe.length === 0, pe);
+      await pl.evaluate((o) => { if (o) localStorage.setItem("home", o); localStorage.setItem("loc", JSON.stringify({ mode: "home" })); }, orig);
+      await pl.close();
+    }
+
     // ---- E-Modus
     await p.click("#seg [data-f=ev]"); await p.waitForSelector("#evBody .list .rtitem", T);
     check("E-Modus: ⚡ Strom aktiv, Ladestationen mit Preis in €/kWh", /Strom/.test(await tx("#seg .on")) && /€\/kWh/.test(await tx("#evBody .hero")) && (await n("#evBody .rtitem")) >= 5);

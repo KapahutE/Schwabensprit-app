@@ -191,4 +191,38 @@ const fs = require("fs"), path = require("path"), vm = require("vm"), { spawnSyn
   st.setJ("lvl", { k: "0.9", at: now }); check("Füllstand: unbekannter Wert wird ignoriert", R("levelGet('fuel')") === null);
   R("levelSet('fuel', null)"); check("Füllstand: „Nicht angeben“ löscht die Auswahl", R("levelGet('fuel')") === null);
 }
+// ---- 10. Regeladresse: lokal gespeichert, Start, Übernahme der bisherigen Base, nutzbarer Radius, zuletzt benutzte Orte
+{
+  const dk = (a, b, c, d) => { const p = Math.PI / 180, x = Math.sin((c - a) * p / 2) ** 2 + Math.cos(a * p) * Math.cos(c * p) * Math.sin((d - b) * p / 2) ** 2; return 12742 * Math.asin(Math.sqrt(x)); };
+  const BS = fixture("bases.json"), mk = (loc = { mode: "base", baseId: null }) => sandbox(["regel.js"], { distKm: dk, bases: BS, loc, radius: 10, geoSearch: async () => [], getPosition: async () => ({}), center: () => null, load() {}, homeBase: () => null });
+  const ctx = mk(), R = (code) => vm.runInContext(code, ctx);
+  check("Regeladresse: ohne Eintrag keine, gespeicherte wird auf 4 Stellen gerundet gelesen", R("homeAddr()") === null && (R("homeSet({ lat: 48.69461234, lng: 9.21081234, label: 'Marktplatz, Filderstadt' })"), JSON.stringify(R("homeAddr()")) === JSON.stringify({ lat: 48.6946, lng: 9.2108, label: "Marktplatz, Filderstadt" })));
+  R("homeClear()"); check("Regeladresse: Entfernen", R("homeAddr()") === null);
+  ctx.store.setJ("home", { lat: "x", lng: 9 }); check("Regeladresse: ungültiger Eintrag wird ignoriert", R("homeAddr()") === null);
+  // zuletzt benutzte Orte: neueste zuerst, höchstens 4, gleicher Ort (±50 m) nur einmal, früherer „gesuchter Ort“ wird übernommen
+  const c2 = mk(); c2.store.setJ("lastPlace", { lat: 48.4, lng: 9.99, label: "Ulm" }); const R2 = (code) => vm.runInContext(code, c2);
+  check("Zuletzt benutzt: früher gesuchter Ort wird übernommen", R2("recentList().length") === 1 && R2("recentList()[0].label") === "Ulm");
+  for (const [i, n] of ["A", "B", "C", "D", "E"].entries()) R2(`recentAdd({ lat: ${48 + i / 10}, lng: 9, label: '${n}' })`);
+  R2("recentAdd({ lat: 48.2, lng: 9.00001, label: 'C neu' })");
+  check("Zuletzt benutzt: neueste zuerst, höchstens 4, gleicher Ort nur einmal", JSON.stringify(R2("recentList().map((x) => x.label)")) === JSON.stringify(["C neu", "E", "D", "B"]), R2("recentList().map((x) => x.label)"));
+  // nutzbarer Radius: ein Gebiet muss den ganzen Kreis abdecken (Mittelpunkt einer Base: 25 km; am Rand weniger; fern: 0)
+  const cov = (la, ln) => R(`coverKm(${la}, ${ln})`);
+  check("Nutzbarer Radius: Mittelpunkt einer Base 25 km, 10 km daneben 15 km, weit entfernt 0 km", cov(48.5367, 9.2857) === 25 && cov(48.5367 + 10 / 111.2, 9.2857) >= 14 && cov(48.5367 + 10 / 111.2, 9.2857) <= 16 && cov(50.0, 9.0) === 0);
+  check("Nutzbarer Radius: nimmt das beste Gebiet (Stuttgart-Mitte liegt näher an H als an S)", cov(48.784, 9.182) === Math.floor(Math.max(...BS.map((b) => b.radius_km + 0.1 - dk(48.784, 9.182, b.lat, b.lng)))));
+  check("Suchtreffer: Beschriftung mit Ort, ohne Doppelung", R("hitLabel({ label: 'Hauptstraße 12', sub: 'Ulm, Baden-Württemberg' })") === "Hauptstraße 12, Ulm" && R("hitLabel({ label: 'Ulm', sub: 'Ulm, Baden-Württemberg' })") === "Ulm" && R("hitLabel({ label: 'Berlin', sub: '' })") === "Berlin");
+  // Start und Übernahme der bisherigen Base
+  const cH = mk({ mode: "base", baseId: "S" }), RH = (code) => vm.runInContext(code, cH);
+  check("Start: ohne Regeladresse bleibt die bisherige Wahl", (RH("startLoc()"), cH.loc.mode === "base" && cH.loc.baseId === "S"));
+  RH("migrateHome()");
+  check("Übernahme: bisherige Base wird zur Regeladresse (Mitte der Base), Ort „Regeladresse“", cH.loc.mode === "home" && RH("homeAddr().label") === "Homebase Sailers" && Math.abs(RH("homeAddr().lat") - 48.5367) < 1e-4);
+  const cG = mk({ mode: "gps", lat: 48.5, lng: 9.2, label: "Mein Standort" }); cG.store.set("homeBase", "H"); vm.runInContext("migrateHome()", cG);
+  check("Übernahme: „Meine Homebase“ aus den Einstellungen hat Vorrang und gilt beim Kaltstart", cG.loc.mode === "home" && vm.runInContext("homeAddr().label", cG) === "Base H · Leinfelden");
+  const cK = mk({ mode: "gps", lat: 48.5, lng: 9.2, label: "Mein Standort" }); vm.runInContext("homeSet({ lat: 48.7, lng: 9.2, label: 'Zuhause' }); startLoc()", cK);
+  check("Start: Kaltstart mit Regeladresse → Regeladresse statt zuletzt gewähltem Standort", cK.loc.mode === "home");
+  const cN = mk({ mode: "base", baseId: "F", auto: true });
+  check("Erststart: automatisch gesetzte Base wird nicht zur Regeladresse, Ortswahl wird verlangt", (vm.runInContext("migrateHome()", cN), vm.runInContext("homeAddr()", cN) === null && vm.runInContext("needLocPick()", cN) === true));
+  const cP = mk({ mode: "place", lat: 48.4, lng: 9.99, label: "Ulm" }); check("Ortswahl: ein gewählter Ort braucht keine Nachfrage", vm.runInContext("needLocPick()", cP) === false);
+  const rh = (la, ln, r) => { const c3 = mk(); c3.radius = r; return vm.runInContext(`radiusHint({ lat: ${la}, lng: ${ln} })`, c3); };
+  check("Radiushinweis: vollständig / nur bis x km / außerhalb", !rh(48.5367, 9.2857, 25).warn && /bis ≈ 25 km/.test(rh(48.5367, 9.2857, 25).txt) && rh(48.5367 + 10 / 111.2, 9.2857, 25).warn && /nur bis ≈ 1\d km/.test(rh(48.5367 + 10 / 111.2, 9.2857, 25).txt) && /außerhalb des Datengebiets/.test(rh(50, 9, 10).txt));
+}
 done("Unit-Tests");

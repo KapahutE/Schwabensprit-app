@@ -4,3 +4,4 @@
 
 - `datenschutz-entwurf.md`
 - `impressum-entwurf.md`
+- `email-tankerkoenig.md` – Vorlage für die Anfrage an Tankerkönig (Abrufmuster, Speichern und Ausliefern der Daten, Ausbau auf den Großraum); Adresse `info@tankerkoenig.de` laut Impressum und AGB

@@ -16,7 +16,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
 <title>Schwabensprit</title>
-<link rel="stylesheet" href="app.css?v=f97b9fea">
+<link rel="stylesheet" href="app.css?v=555c5339">
 </head>
 <body>
 <div id="ptr"><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></div></div>
@@ -158,23 +158,26 @@
 <dialog id="dlgLoc">
   <div class="inner">
     <h3>Ort &amp; Radius</h3>
-    <div class="grouplabel">Bases (mit Verlauf &amp; Analyse)</div>
-    <div class="optgroup" id="locBases"></div>
-    <div class="grouplabel">Anderer Ort</div>
+    <p class="small" id="locHint" hidden>Wo möchtest du tanken? Nimm deinen Standort oder gib eine Adresse ein. Mit „Als Regeladresse merken“ startet die App künftig dort.</p>
+    <div class="grouplabel">Standort</div>
     <div class="optgroup">
       <button class="opt" id="optGps"><div class="ic gps">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M21.7 2.3a1 1 0 0 0-1.1-.2l-18 8a1 1 0 0 0 .1 1.9l7.4 2 2 7.4a1 1 0 0 0 1.9.1l8-18a1 1 0 0 0-.3-1.2z"/></svg></div>
         <div class="t"><div>Aktueller Standort</div><div class="sub" id="gpsSub">per Standortfreigabe</div></div><span class="check">✓</span></button>
-      <button class="opt" id="optPlace" hidden><div class="ic pl">⌖</div>
-        <div class="t"><div id="placeName"></div><div class="sub">gesuchter Ort</div></div><span class="check">✓</span></button>
+      <button class="opt" id="optHome" hidden><div class="ic home" aria-hidden="true">🏠</div>
+        <div class="t"><div id="homeName"></div><div class="sub">Regeladresse</div></div><span class="check">✓</span></button>
     </div>
+    <div class="grouplabel">Adresse eingeben</div>
     <form class="search" id="searchForm">
-      <input id="inSearch" type="search" placeholder="Ort oder PLZ suchen" autocomplete="off" enterkeyhint="search">
+      <input id="inSearch" type="search" placeholder="Adresse, Ort oder PLZ" aria-label="Adresse, Ort oder PLZ" autocomplete="off" enterkeyhint="search">
       <button class="btn" type="submit">Suchen</button>
     </form>
     <div class="optgroup" id="searchResults" style="margin-top:8px"></div>
+    <div id="recentGroup" hidden><div class="grouplabel">Zuletzt benutzt</div><div class="optgroup" id="locRecent"></div></div>
+    <button class="btn secondary block" id="btnSetHome" type="button" hidden>Als Regeladresse merken</button>
     <div class="grouplabel">Radius</div>
     <div class="radius"><span class="sub">1</span><input type="range" id="inRadius" aria-label="Umkreis in Kilometern" min="1" max="25" step="1"><span class="sub">25</span><b id="radiusVal"></b></div>
+    <p class="small" id="radiusHint"></p>
     <div class="actions"><button class="btn block" id="btnLocDone" type="button">Fertig</button></div>
   </div>
 </dialog>
@@ -192,10 +195,14 @@
     <input id="inToken" type="password" placeholder="github_pat_…" autocapitalize="off" autocorrect="off" spellcheck="false">
     <label for="inTokExp">Schlüssel gültig bis <span class="small">(steht bei GitHub beim Schlüssel – die App erinnert 14 Tage vorher)</span></label>
     <input id="inTokExp" type="date">
-    <label for="inTk">Tankerkönig-Schlüssel <span class="small">(optional, für Live-Preise außerhalb der Bases)</span></label>
+    <label for="inTk">Tankerkönig-Schlüssel <span class="small">(optional, für Live-Preise außerhalb des Datengebiets)</span></label>
     <input id="inTk" type="password" placeholder="xxxxxxxx-xxxx-…" autocapitalize="off" autocorrect="off" spellcheck="false">
-    <label for="inHome">Meine Homebase <span class="small">(Vergleich im <span class="tbname">Tankbuch</span>)</span></label>
-    <select id="inHome"></select>
+    <label for="inHomeQ">Regeladresse <span class="small">(Ort für die grundsätzlichen Abfragen und den Start der App – nur auf diesem Gerät; auch Vergleich im <span class="tbname">Tankbuch</span>)</span></label>
+    <div class="homenow"><b id="homeNow">nicht festgelegt</b> <button class="btn secondary" type="button" id="btnHomeClear" hidden>Entfernen</button></div>
+    <div class="search"><input id="inHomeQ" type="search" placeholder="Adresse, Ort oder PLZ" autocomplete="off" enterkeyhint="search"><button class="btn" type="button" id="btnHomeSearch">Suchen</button></div>
+    <div class="optgroup" id="homeHits"></div>
+    <button class="btn secondary block" type="button" id="btnHomeGps">Standort übernehmen</button>
+    <p class="small" id="homeSub" aria-live="polite"></p>
     <div class="two-in">
       <div><label for="inTank">Tankgröße (Liter)</label><input id="inTank" type="text" inputmode="decimal" placeholder="50"></div>
       <div><label for="inCons">Verbrauch (l/100 km)</label><input id="inCons" type="text" inputmode="decimal" placeholder="7"></div>
@@ -227,7 +234,7 @@
       <p class="small">Einzelheiten: <a href="https://github.com/KapahutE/Schwabensprit-app/blob/main/THIRD_PARTY.md" target="_blank" rel="noopener">THIRD_PARTY.md</a></p>
     </details>
     <details class="tbl privacy"><summary>Datenschutz</summary>
-      <p class="small">Die App hat keinen eigenen Server und kein Tracking. Einstellungen, Favoriten, Ladekarten-Preise (Eigeneingabe), Spritbüchle, gemerkte Strecken und zuletzt gesuchte Orte liegen nur auf diesem Gerät, ebenso der zuletzt geladene Stand der Preise und Ladestationen (Zwischenspeicher für schnellen Start und Betrieb ohne Netz). Der Standort wird nur mit deiner Freigabe (iPhone bzw. Android) und nur bei „Mein Standort“ abgefragt und höchstens auf ca. 100 m gerundet gespeichert.</p>
+      <p class="small">Die App hat keinen eigenen Server und kein Tracking. Einstellungen, Favoriten, Ladekarten-Preise (Eigeneingabe), Spritbüchle, gemerkte Strecken, die Regeladresse und zuletzt benutzte Orte liegen nur auf diesem Gerät, ebenso der zuletzt geladene Stand der Preise und Ladestationen (Zwischenspeicher für schnellen Start und Betrieb ohne Netz). Der Standort wird nur mit deiner Freigabe (iPhone bzw. Android) und nur bei „Mein Standort“ abgefragt und höchstens auf ca. 100 m gerundet gespeichert.</p>
       <p class="small">Folgende Dienste bekommen beim Benutzen Daten (immer auch deine IP-Adresse):</p>
       <ul class="small">
         <li><b>GitHub</b> – Abruf der Preisdaten (kein Standort).</li>
@@ -259,15 +266,16 @@
 <div id="instBar" hidden><span>📲 Als App installieren – startet schneller, auch ohne Netz</span><button class="btn" id="btnInstBar" type="button">Installieren</button><button id="btnInstNo" type="button" aria-label="Hinweis schließen">✕</button></div>
 <div class="toast" id="toast"></div>
 
-<script src="js/grund.js?v=f97b9fea"></script>
-<script src="js/fuellstand.js?v=f97b9fea"></script>
-<script src="js/preise.js?v=f97b9fea"></script>
-<script src="js/verlauf.js?v=f97b9fea"></script>
-<script src="js/belegleser.js?v=f97b9fea"></script>
-<script src="js/routegeo.js?v=f97b9fea"></script>
-<script src="js/route.js?v=f97b9fea"></script>
-<script src="js/ladekarte.js?v=f97b9fea"></script>
-<script src="js/strom.js?v=f97b9fea"></script>
-<script src="js/tankbuch.js?v=f97b9fea"></script>
+<script src="js/grund.js?v=555c5339"></script>
+<script src="js/fuellstand.js?v=555c5339"></script>
+<script src="js/regel.js?v=555c5339"></script>
+<script src="js/preise.js?v=555c5339"></script>
+<script src="js/verlauf.js?v=555c5339"></script>
+<script src="js/belegleser.js?v=555c5339"></script>
+<script src="js/routegeo.js?v=555c5339"></script>
+<script src="js/route.js?v=555c5339"></script>
+<script src="js/ladekarte.js?v=555c5339"></script>
+<script src="js/strom.js?v=555c5339"></script>
+<script src="js/tankbuch.js?v=555c5339"></script>
 </body>
 </html>
