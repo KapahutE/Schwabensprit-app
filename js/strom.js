@@ -25,7 +25,7 @@ const Strom = (() => {
   };
   const FRESH = 2 * 36e5;   // Belegung zählt nur, wenn sie höchstens 2 Std. alt ist (viele Feeds melden nur bei Änderung oder gar nicht mehr)
   const eff = (k) => k.raw !== "unk" && k.ts && Date.now() - k.ts <= FRESH ? k.raw : "unk";   // wirksamer Status zum Anzeigezeitpunkt
-  const KWH = () => { const v = parseFloat(String(store.get("kwh", "30")).replace(",", ".")); return v > 0 && v <= 200 ? v : 30; };
+  const KWH = () => NEED("ev");   // nötige Ladung in kWh: Akkugröße minus Rest laut Füllstand (js/fuellstand.js)
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let seq = 0;
 
@@ -263,7 +263,7 @@ const Strom = (() => {
   const ct2 = (v) => eur2s(v) + " €/kWh";
   const stand = () => S.at ? `<i></i>⚡ ${S.fromCache ? "Gespeichert · " : ""}Stand ${esc(ago(new Date(S.at).toISOString()))}` : "";
   // Kosten je 100 km mit dem günstigsten Preis – und zum Vergleich Sprit (Median der Tankstellen hier, wenn Preisdaten geladen sind)
-  const EVC = () => { const v = parseFloat(String(store.get("evcons", "18")).replace(",", ".")); return v > 3 && v <= 60 ? v : 18; };
+  const EVC = () => evCons();
   function per100Html(e) {
     if (e == null) return "";
     const fs = view?.stations ? view.stations.filter((s) => hasPrice(s)).map((s) => s[fuel]) : [];
@@ -306,12 +306,12 @@ const Strom = (() => {
   function itemHtml(v, lv, cheapestE, where, ctx, idp = "ev-") {
     const s = v.s, open = (ctx ? RT.open : S.open) === s.id, d = v.e != null && cheapestE != null ? v.e - cheapestE : null;
     return `<div class="rtitem${open ? " open" : ""}" id="${idp}${esc(s.id)}">
-      <button class="item evi${v.out || v.open === false ? " closed" : ""}" data-evst="${esc(s.id)}" aria-expanded="${open}">
+      <button class="item evi${v.out || v.open === false || v.far ? " closed" : ""}" data-evst="${esc(s.id)}" aria-expanded="${open}">
         ${badge(s, lv(v))}
         <div class="info"><div class="name"><span>${esc(s.brand)}</span>${isFav(s) ? `<span class="favstar">★</span>` : ""}</div>
           <div class="addr">${where ?? km(s.dist)} · ${power(v)} · ${esc(s.place)}</div>
           <div class="addr">${avail(v)}${v.open === false ? " · <span class=\"evst out\">geschlossen</span>" : ""}</div></div>
-        <div class="p">${v.e != null ? `<b>${eur2s(v.e)}</b><div class="d">€/kWh${v.src === "card" ? " 💳" : ""}</div><div class="d">${d && d > 0.0049 ? ct(d) : "günstigste"}</div>` : `<div class="d">${noPrice(v)}</div>`}</div>
+        <div class="p">${v.e != null ? `<b>${eur2s(v.e)}</b><div class="d">€/kWh${v.src === "card" ? " 💳" : ""}</div><div class="d">${v.far ? say("net erreichbar", "außer Reichweite") : d && d > 0.0049 ? ct(d) : "günstigste"}</div>` : `<div class="d">${noPrice(v)}</div>`}</div>
       </button>${open ? detailHtml(v, ctx) : ""}</div>`;
   }
   function detailHtml(v, ctx) {
@@ -376,7 +376,7 @@ const Strom = (() => {
       const s = cheapest.s;
       h += `<section class="card hero evhero"><span class="eyebrow">${say("Am billigschde lada", "Günstigste Ladestation")} · ${radius > MAX_KM ? MAX_KM : radius} km</span>
         <div class="pricerow"><div class="price">${eur2s(cheapest.e)}<span class="cur">€/kWh${cheapest.src === "card" ? " 💳" : ""}</span></div>
-          ${priced.length > 1 && save > 0.005 ? `<div class="save"><span class="eyebrow">${say("Gspart", "Ersparnis")}</span><b>${eur2(save)}</b><span>bei ${fmtNum(KWH(), 0)} kWh ggü. Ø</span></div>` : ""}</div>
+          ${priced.length > 1 && save > 0.005 ? `<div class="save"><span class="eyebrow">${say("Gspart", "Ersparnis")}</span><b>${eur2(save)}</b><span>bei ${needTxt("ev")} ggü. Ø</span></div>` : ""}</div>
         <div class="station">${badge(s, lv(cheapest), "lg")}<div style="min-width:0"><div class="where">${esc(s.brand)} · ${esc(s.place)}</div>
           <div class="sub">${esc(s.street)} · ${km(s.dist)} · ${power(cheapest)}</div></div></div>
         ${cheapest.src === "card" ? `<p class="quip">💳 Mit deiner Karte „${esc(cheapest.card.name)}“ – Eigeneingabe, bestätigt ${esc(Karte.ago(cheapest.card))}${cheapest.d != null ? ` · Direktzahlung hier: ${Karte.f2(cheapest.d)} €/kWh` : " · kein Direktpreis gemeldet"}</p>` : ""}
@@ -549,14 +549,15 @@ const Strom = (() => {
     if (!RT.memo || RT.memo.ver !== RT.ver) RT.memo = { ver: RT.ver, list: dedupe([...RT.map.values()]) };
     const cand = [];
     for (const s of RT.memo.list) { const v = stationView(s); if (v && !(S.hideBusy && (v.full || v.out))) cand.push({ id: s.id, lat: s.lat, lng: s.lng, ev: v.e, _v: v }); }
-    const near = stationsAlongRoute(R.index, cand, { corridorKm: corr, fuel: "ev", roadFactor: ROAD, tankL: KWH(), consL100: 0 });
-    return near.map((x) => ({ ...x._v, along: x.alongKm, off: x.offKm, detour: x.detourKm, min: R.sec / 60 * (R.km ? x.alongKm / R.km : 0) }));
+    const near = stationsAlongRoute(R.index, cand, { corridorKm: corr, fuel: "ev", roadFactor: ROAD, tankL: NEED("ev"), consL100: 0 });
+    const range = RANGE("ev");
+    return near.map((x) => ({ ...x._v, along: x.alongKm, off: x.offKm, detour: x.detourKm, min: R.sec / 60 * (R.km ? x.alongKm / R.km : 0), far: !inReach(x.alongKm + x.offKm * ROAD, range) }));
   }
   const detTxt = (r) => r.off < 0.15 ? "direkt an der Strecke" : `${km(r.off)} abseits`;
   const whereTxt = (r) => `${km(r.along)} · ≈ ${dur(Math.max(1, Math.round(r.min)))} · ${detTxt(r)}`;
   function routeHtml(R, ctx) {
     RT.ctx = ctx;
-    const rows = alongRows(R, ctx.corr), priced = rows.filter((r) => r.e != null), lv = lvOf(priced), stats = cardStats(rows);
+    const rows = alongRows(R, ctx.corr), priced = rows.filter((r) => r.e != null && !r.far), lv = lvOf(priced), stats = cardStats(rows);
     let list = rows;
     if (RT.sort === "price") list = [...priced].sort((a, b) => a.e - b.e || a.along - b.along).concat(rows.filter((r) => r.e == null));
     else if (RT.sort === "power") list = [...rows].sort((a, b) => b.kw - a.kw || a.along - b.along);
@@ -571,7 +572,7 @@ const Strom = (() => {
       const s = cheapest.s;
       h += `<section class="card hero rthero evhero"><span class="eyebrow">${say("Am billigschde lada uff dr Strecke", "Günstigster Ladestopp an der Strecke")}</span>
         <div class="pricerow"><div class="price">${eur2s(cheapest.e)}<span class="cur">€/kWh${cheapest.src === "card" ? " 💳" : ""}</span></div>
-          ${priced.length > 1 && save > 0.005 ? `<div class="save"><span class="eyebrow">${say("Gspart", "Ersparnis")}</span><b>${eur2(save)}</b><span>bei ${fmtNum(KWH(), 0)} kWh ggü. Ø</span></div>` : ""}</div>
+          ${priced.length > 1 && save > 0.005 ? `<div class="save"><span class="eyebrow">${say("Gspart", "Ersparnis")}</span><b>${eur2(save)}</b><span>bei ${needTxt("ev")} ggü. Ø</span></div>` : ""}</div>
         <div class="station">${badge(s, lv(cheapest), "lg")}<div style="min-width:0"><div class="where">${esc(s.brand)} · ${esc(s.place)}</div>
           <div class="sub">${whereTxt(cheapest)} · ${power(cheapest)}</div></div></div>
         ${cheapest.src === "card" ? `<p class="quip">💳 Mit deiner Karte „${esc(cheapest.card.name)}“ – Eigeneingabe, bestätigt ${esc(Karte.ago(cheapest.card))}${cheapest.d != null ? ` · Direktzahlung hier: ${Karte.f2(cheapest.d)} €/kWh` : " · kein Direktpreis gemeldet"}</p>` : ""}

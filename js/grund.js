@@ -6,10 +6,10 @@ const FUELS = { e5: "Super E5", e10: "Super E10", diesel: "Diesel" };
 const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 // Auf Schwäbisch (abschaltbar unter ⚙): Tipps, Überschriften und kurze Hinweise. say(schwäbisch, hochdeutsch)
 const SW = () => store.get("dialect", "1") === "1";
-// Kosten einer Tankfüllung inkl. Hin- und Rückfahrt (Fahrstrecke ≈ 1,3 × Luftlinie)
+// Kosten des Nachtankens inkl. Hin- und Rückfahrt (Fahrstrecke ≈ 1,3 × Luftlinie); TANK = Tankgröße
 const num = (k, d, lo, hi) => Math.min(hi, Math.max(lo, Number(String(store.get(k, d)).replace(",", ".")) || Number(d)));
 const TANK = () => num("tank", "50", 5, 150), CONS = () => num("cons", "7", 2, 30), ROAD = 1.3;
-const fillCost = (s, f = fuel) => s[f] * (TANK() + 2 * (s.dist || 0) * ROAD * CONS() / 100);
+const fillCost = (s, f = fuel) => costWith(s[f], NEED(), s.dist || 0, CONS(), ROAD);   // NEED(): nötige Menge laut Füllstand (js/fuellstand.js)
 const say = (schw, hoch) => SW() ? schw : hoch;
 // Name des Tankbuch-Bereichs (folgt dem Schwäbisch-Schalter)
 const TB_NAME = () => say("Spritbüchle", "Tankbuch");
@@ -499,6 +499,7 @@ function setTab(t, fromPop) {
 // ---- Darstellung
 function render() {
   document.body.dataset.tab = tab;
+  if (typeof renderLevelChip === "function") renderLevelChip();   // ⛽ bzw. 🔋 folgt der gewählten Art
   document.querySelectorAll(".tbname").forEach((e) => { e.textContent = TB_NAME(); });
   document.querySelectorAll("#tabbar button").forEach((b) => {
     const on = b.dataset.tab === tab;
@@ -1077,13 +1078,8 @@ $("#seg").addEventListener("click", (e) => {
 });
 
 document.addEventListener("click", (e) => {
-  const el = e.target.closest("[data-lvl],[data-tab],[data-showall],[data-route],[data-detail],[data-fuel],[data-sort],[data-open],[data-report],[data-view],[data-fav],[data-favtoggle],#btnFavEdit,#btnBack,#btnSetup");
+  const el = e.target.closest("[data-tab],[data-showall],[data-route],[data-detail],[data-fuel],[data-sort],[data-open],[data-report],[data-view],[data-fav],[data-favtoggle],#btnFavEdit,#btnBack,#btnSetup");
   if (!el) return;
-  if (el.dataset.lvl) {   // Tank-Rat: Füllstand angeben / wieder abwählen
-    const f = +el.dataset.lvl;
-    if (store.getJ("lvl", null)?.f === f) store.set("lvl", ""); else store.setJ("lvl", { f, at: Date.now() });
-    return renderWhen();
-  }
   if (el.dataset.tab) return setTab(el.dataset.tab);
   if (el.hasAttribute("data-showall")) { showAll = !showAll; return render(); }
   if (el.dataset.fav) return openFav(el.dataset.fav);

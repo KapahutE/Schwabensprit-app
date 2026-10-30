@@ -99,7 +99,7 @@ const Route = (() => {
     if (!R) return;
     const ep = ((await endpoints()).routing || []).find((e) => e.type === "osrm");
     if (!ep) return;
-    const near = stationsAlongRoute(R.index, candidates(), { corridorKm: CORRS.at(-1), fuel, roadFactor: ROAD, tankL: TANK(), consL100: CONS() });
+    const near = stationsAlongRoute(R.index, candidates(), { corridorKm: CORRS.at(-1), fuel, roadFactor: ROAD, tankL: NEED(), consL100: CONS() });
     const pick = new Map(), tried = R.tried ||= new Set(), todo = (x) => !R.det.has(x.id) && !tried.has(x.id);
     // die günstigsten je Sorte und – in derselben Anfrage – die besten inkl. geschätztem Umweg (Kandidaten für „Lohnt sich“)
     for (const f of Object.keys(FUELS))
@@ -378,7 +378,8 @@ const Route = (() => {
       for (const f of Object.keys(FUELS)) { const x = priceAt(s, f, s.eta); s.p[f] = x.v; s.pfc[f] = x.fc; }
       const sch = schedule(s, new Date(s.eta));
       s.o = s.eta - Date.now() < SOON ? isOpen(s) : sch ? sch.open : !!s.open;
-      s.fillCost = s.p[fuel] != null ? s.p[fuel] * (TANK() + s.detourKm * CONS() / 100) : null;
+      s.fillCost = s.p[fuel] != null ? s.p[fuel] * (NEED() + s.detourKm * CONS() / 100) : null;
+      s.far = !inReach(s.alongKm + s.offKm * ROAD, RANGE());   // Füllstand: erste Tankstelle muss in Reichweite liegen
     }
     return list;
   }
@@ -456,13 +457,20 @@ const Route = (() => {
     return `<section class="card rtsum" aria-live="polite"><span class="eyebrow">${say("Dei Strecke", "Deine Strecke")} · ⚡ Strom · ± ${S.corr} km</span>
       <div class="big">${km(R.km).replace(",0 km", " km")} <span>≈ ${dur(Math.max(1, Math.round(R.sec / 60)))}</span></div>
       <div class="sub">${esc(R.from)} → ${esc(R.to)}</div>
+      ${levelLine()}
       ${R.a && R.b ? `<div class="row"><button class="btn secondary rtsavebtn" data-rtsave aria-pressed="${isSaved}">${isSaved ? "★ " + say("Gmerkt", "Gemerkt") : "☆ " + say("Strecke merka", "Strecke merken")}</button></div>` : ""}</section>`
       + Strom.routeHtml(R, ctx);
   }
+  // Zeile unter der Strecke: Füllstand, nötige Menge, Reichweite (nur wenn angegeben)
+  const levelLine = () => {
+    const kind = lvlKind(), g = levelGet(kind); if (!g) return "";
+    const range = RANGE(kind), lim = range * REACH_SAFE;
+    return `<div class="sub rtlevel">${kind === "ev" ? "🔋" : "⛽"} ${levelText(g.k)} · ${say("nachtanka", kind === "ev" ? "laden" : "nachtanken")} ≈ ${needTxt(kind)} · ${say("Reichweit", "Reichweite")} ≈ ${fmtNum(range, 0)} km${range < 400 ? ` · ${say("Tankstopp i de erschte", "Stopp in den ersten")} ≈ ${fmtNum(lim, 0)} km` : ""}</div>`;
+  };
   function resultHtml(R) {
     if (evMode) return evResultHtml(R);
-    const list = enrich(stationsAlongRoute(R.index, candidates(), { corridorKm: S.corr, fuel, roadFactor: ROAD, tankL: TANK(), consL100: CONS() }), R);
-    const priced = list.filter((s) => has(s));
+    const list = enrich(stationsAlongRoute(R.index, candidates(), { corridorKm: S.corr, fuel, roadFactor: ROAD, tankL: NEED(), consL100: CONS() }), R);
+    const priced = list.filter((s) => has(s) && !s.far);   // Tankstellen außerhalb der Reichweite zählen nicht
     // Günstigste (Preis bei Ankunft; bei gleichem Preis die mit dem kleineren Umweg) und beste inkl. Umweg
     const minP = priced.length ? Math.min(...priced.map((s) => pf(s))) : null;
     const byCost = (x, y) => (y.fillCost < x.fillCost - 1e-9 || (Math.abs(y.fillCost - x.fillCost) <= 1e-9 && y.alongKm < x.alongKm) ? y : x);
@@ -480,6 +488,7 @@ const Route = (() => {
     let h = `<section class="card rtsum" aria-live="polite"><span class="eyebrow">${say("Dei Strecke", "Deine Strecke")} · ${FUELS[fuel]} · ± ${S.corr} km</span>
       <div class="big">${km(R.km).replace(",0 km", " km")} <span>≈ ${dur(Math.max(1, Math.round(R.sec / 60)))}</span>${tripCost != null ? ` <span>· Sprit ≈ ${eur2(tripCost)}</span>` : ""}</div>
       <div class="sub">${esc(R.from)} → ${esc(R.to)}${depTxt} · ${list.length} ${list.length === 1 ? say("Tankstell", "Tankstelle") : say("Tankstella", "Tankstellen")} ${say("am Weg", "an der Strecke")}${oldest ? ` · Preise ${say("vom", "Stand")} ${esc(ago(oldest))}` : ""}</div>
+      ${levelLine()}
       ${S.atBusy ? `<div class="sub rtat"><span class="spin-dot"></span> ${say("Preis vo Öschtrreich (E-Control) kommet …", "Preise aus Österreich (E-Control) werden geladen …")}</div>`
         : S.atErr && atPoints(R).length ? `<div class="sub rtat">🇦🇹 ${say("D'E-Control isch grad net z'erreicha – für Öschtrreich gibt's grad koine Preis.", "Die E-Control ist gerade nicht erreichbar – für Österreich gibt es gerade keine Preise.")}</div>`
         : list.some((s) => s.country === "AT") ? `<div class="sub rtat">🇦🇹 ${say("Öschtrreich: amtliche Preis vo dr E-Control – gmeldet werret bloß die billigschte je Gegend", "Österreich: amtliche Preise der E-Control – gemeldet werden nur die günstigsten je Gegend")}${fuel !== "diesel" ? ", Super 95" : ""}.</div>` : ""}
@@ -501,17 +510,17 @@ const Route = (() => {
         ? `<p class="quip">🕒 ${say(`Bei Ankunft (≈ ${hm2(cheapest.eta)} Uhr) voraussichtlich ${eurX(pf(cheapest))} – grad no ${eurX(cheapest[fuel])}.`, `Bei Ankunft (≈ ${hm2(cheapest.eta)} Uhr) voraussichtlich ${eurX(pf(cheapest))} – aktuell ${eurX(cheapest[fuel])}.`)}</p>` : "";
       h += `<section class="card hero rthero"><span class="eyebrow">${say("Am billigschde uff dr Strecke", "Günstigste an der Strecke")}</span>
         <div class="pricerow"><div class="price">${cheapest.pfc[fuel] ? "<small>≈</small>" : ""}${priceN(pf(cheapest))}<span class="cur">€</span></div>
-          ${priced.length > 1 && save > 0.0005 ? `<div class="save"><span class="eyebrow">${say("Gspart", "Ersparnis")}</span><b>${eur2(save * TANK())}</b><span>bei ${fmtNum(TANK(), 0)} l ggü. Ø</span></div>` : ""}</div>
+          ${priced.length > 1 && save > 0.0005 ? `<div class="save"><span class="eyebrow">${say("Gspart", "Ersparnis")}</span><b>${eur2(save * NEED())}</b><span>bei ${needTxt()} ggü. Ø</span></div>` : ""}</div>
         <div class="station">${badge(cheapest, lv(cheapest), "lg")}<div style="min-width:0"><div class="where">${esc(cheapest.brand)} · ${esc(cheapest.place)}</div>
           <div class="sub">${whenTxt(cheapest)} · ${offTxt(cheapest)}${cheapest.o && sch?.short ? " · " + esc(sch.short) : ""}</div></div></div>
         ${fcNote}
-        ${SW() && priced.length > 1 && save > 0.0005 ? `<p class="quip">🥨 ${brezel(save * TANK())}</p>` : ""}
+        ${SW() && priced.length > 1 && save > 0.0005 ? `<p class="quip">🥨 ${brezel(save * NEED())}</p>` : ""}
         <div class="row two"><a class="btn" href="${esc(gmaps(cheapest))}" target="_blank" rel="noopener">${NAV} ${say("Tankstopp", "Tankstopp")}</a>
           <button class="btn secondary" data-rtmap="${esc(cheapest.id)}">${say("Uff dr Kart", "Auf Karte")}</button></div></section>`;
       if (bestValue && bestValue.id !== cheapest.id && cheapest.fillCost - bestValue.fillCost > 0.05) {
         const gain = cheapest.fillCost - bestValue.fillCost;
         h += `<section class="card valuecard"><div class="tiphead"><div class="ic">🚗</div><div><b>${say("Lohnt sich am meischda", "Lohnt sich am meisten")}</b>
-          <div class="sub">${say("inkl. Umweg", "inkl. Umweg")} · ${fmtNum(TANK(), 0)} l · ${fmtNum(CONS(), 1)} l/100 km</div></div></div>
+          <div class="sub">${say("inkl. Umweg", "inkl. Umweg")} · ${needTxt()} · ${fmtNum(CONS(), 1)} l/100 km</div></div></div>
           <div class="station" style="margin-top:14px">${badge(bestValue, lv(bestValue))}<div style="min-width:0;flex:1"><div class="where" style="font-size:16px">${esc(bestValue.brand)} · ${esc(bestValue.place)}</div>
             <div class="sub">${whenTxt(bestValue)} · ${offTxt(bestValue)}</div></div><div class="price1">${bestValue.pfc[fuel] ? "≈ " : ""}${price(pf(bestValue))}</div></div>
           <p class="verdict">${say(`A bissle deirer, aber näher am Weg: unterm Strich <b>${eur2(gain)} billiger</b> als dr Billigschde (${cheapest.exact ? "" : "≈ "}${km(cheapest.detourKm)} Umweg).`,
@@ -561,7 +570,7 @@ const Route = (() => {
       const cheapSide = diff > 0 ? A : D, before = cheapSide === pre[0];
       const v = Math.abs(diff) < 0.005
         ? say("Ghupft wie gsprunga – dr Unterschied isch unter oim halba Cent.", "Egal – der Unterschied liegt unter einem halben Cent.")
-        : `${before ? say("<b>Vor dr Grenz</b> tanka", "<b>Vor der Grenze</b> tanken") : say("<b>Nach dr Grenz</b> tanka", "<b>Nach der Grenze</b> tanken")}: ${Math.abs(diff * 100).toFixed(1).replace(".", ",")} ct/l ${say("billiger", "günstiger")} – ${say("macht", "das sind")} <b>${eur2(Math.abs(diff) * TANK())}</b> bei ${fmtNum(TANK(), 0)} l.`;
+        : `${before ? say("<b>Vor dr Grenz</b> tanka", "<b>Vor der Grenze</b> tanken") : say("<b>Nach dr Grenz</b> tanka", "<b>Nach der Grenze</b> tanken")}: ${Math.abs(diff * 100).toFixed(1).replace(".", ",")} ct/l ${say("billiger", "günstiger")} – ${say("macht", "das sind")} <b>${eur2(Math.abs(diff) * NEED())}</b> bei ${needTxt()}.`;
       // beide Länder: Preiserhöhungen nur um 12 Uhr – bei Ankunft nach dem nächsten Mittag kann's teurer sein
       const noon = new Date(); noon.setHours(12, 0, 0, 0);
       if (noon.getTime() <= Date.now()) noon.setDate(noon.getDate() + 1);
@@ -582,11 +591,11 @@ const Route = (() => {
   function item(s, cheapest, lv) {
     const p = has(s), o = s.o, sch = schedule(s, new Date(s.eta)), d = p && cheapest ? pf(s) - pf(cheapest) : null, open = S.open === s.id;
     return `<div class="rtitem${open ? " open" : ""}" id="rt-${esc(s.id)}">
-      <button class="item${p ? "" : " closed"}" data-rtst="${esc(s.id)}" aria-expanded="${open}">
+      <button class="item${p && !s.far ? "" : " closed"}" data-rtst="${esc(s.id)}" aria-expanded="${open}">
         ${badge(s, lv(s))}
         <div class="info"><div class="name"><span>${esc(s.brand)}</span>${s.country === "AT" ? `<span class="tag at" title="Österreich">🇦🇹</span>` : ""}${isFav(s.id) ? `<span class="favstar">★</span>` : ""}${o && sch?.short ? `<span class="tag">${esc(sch.short)}</span>` : ""}</div>
           <div class="addr">${whenTxt(s)} · ${offTxt(s)} · ${esc(s.place)}</div></div>
-        <div class="p">${p ? `<b>${s.pfc[fuel] ? "≈" : ""}${price(pf(s))}</b><div class="d">${d ? ct(d) : say("billigschde", "günstigste")}</div>` : `<div class="d">${o ? (s.country === "AT" ? say("koi Preis gmeldet", "kein Preis gemeldet") : "kein " + FUELS[fuel]) : "geschlossen"}${!o && sch?.short ? "<br>" + esc(sch.short) : ""}</div>`}</div>
+        <div class="p">${p ? `<b>${s.pfc[fuel] ? "≈" : ""}${price(pf(s))}</b><div class="d">${s.far ? say("net erreichbar", "außer Reichweite") : d ? ct(d) : say("billigschde", "günstigste")}</div>` : `<div class="d">${o ? (s.country === "AT" ? say("koi Preis gmeldet", "kein Preis gemeldet") : "kein " + FUELS[fuel]) : "geschlossen"}${!o && sch?.short ? "<br>" + esc(sch.short) : ""}</div>`}</div>
       </button>${open ? detailHtml(s) : ""}</div>`;
   }
   function detailHtml(s) {
@@ -595,7 +604,7 @@ const Route = (() => {
     return `<div class="rtdet">
       <div class="fuelgrid${s.country === "AT" ? " two" : ""}">${Object.keys(fl).map((f) => `<div class="ftile${f === cur ? " on" : ""}"><div class="n">${fl[f]}</div><b>${has(s, f) ? (s.pfc[f] ? "≈" : "") + price(pf(s, f)) : "–"}</b>${s.pfc[f] && s[f] != null ? `<div class="r">jetzt ${eurX(s[f])}</div>` : ""}</div>`).join("")}</div>
       <div class="sub">${esc(s.street)}, ${esc(s.place)} · ${later ? `${say("Ankunft", "Ankunft")} ≈ ${hm2(s.eta)} Uhr · ` : ""}${o ? (sch?.text ? esc(sch.text) : "geöffnet") : `${later ? say("dann zu", "dann geschlossen") : "geschlossen"}${sch?.short ? " · " + esc(sch.short) : ""}`}<br>
-        ${say("Umweg", "Umweg")} ${s.exact ? `${km(s.detourKm)} · +${minTxt(s.detourMin)}` : `≈ ${km(s.detourKm)} (${say("gschätzt", "geschätzt")})`}${s.fillCost != null && has(s) ? ` · ${say("Tankfüllung inkl. Umweg", "Tankfüllung inkl. Umweg")} ${eur2(s.fillCost)}` : ""}</div>
+        ${say("Umweg", "Umweg")} ${s.exact ? `${km(s.detourKm)} · +${minTxt(s.detourMin)}` : `≈ ${km(s.detourKm)} (${say("gschätzt", "geschätzt")})`}${s.fillCost != null && has(s) ? ` · ${say("Nachtanka inkl. Umweg", "Nachtanken inkl. Umweg")} ${eur2(s.fillCost)}` : ""}</div>
       <div class="row"><a class="btn" href="${esc(gmaps(s))}" target="_blank" rel="noopener">${NAV} Tankstopp (Google Maps)</a>
         ${mapAlt(apple(s), s)}
         <button class="btn secondary" data-rtmap="${esc(s.id)}">${say("Uff dr Kart", "Auf Karte")}</button>

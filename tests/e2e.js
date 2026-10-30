@@ -71,10 +71,40 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     check("Preise: keine zweite Karte „Lohnt sich am meisten“, Hinweis höchstens als Zeile in der Karte", alt.cards === 1 && alt.second === 0 && (alt.row === null || /Rückfahrt besser/.test(alt.row) && /−[\d,]+ €/.test(alt.row)), alt);
     if (alt.row) { await p.click("#main .hero .alt"); await p.waitForSelector("#detail.open"); check("Preise: Zeile „besser mit Anfahrt“ öffnet die Details dieser Tankstelle", /\S/.test(await tx("#detailBody")) ); await p.click("#btnBack"); await p.waitForTimeout(350); }
 
+    // ---- Füllstand (Sprit): Auswahl neben dem Ort, nötige Menge statt voller Tankgröße
+    {
+      const sv = () => p.evaluate(() => document.querySelector("#main .hero .save")?.innerText.replace(/\s+/g, " ") ?? ""), eur = (t) => parseFloat(t.match(/([\d.]+,\d\d) €/)?.[1].replace(".", "").replace(",", ".")), pick = async (k) => { await p.click("#btnLevel"); await p.waitForSelector("#dlgLevel[open]"); await p.click(`[data-lvlk="${k}"]`); await p.waitForTimeout(250); };
+      const s0 = await sv();
+      check("Füllstand: Knopf neben dem Ort, ohne Auswahl „–“ und Ersparnis für die volle Tankgröße (wie bisher)", await p.isVisible("#btnLevel") && (await tx("#lvlLabel")) === "–" && /bei 50 l ggü\. Ø/.test(s0), s0);
+      await pick("0.5"); const s5 = await sv();
+      check("Füllstand: ½ → Ersparnis für 25 l, etwa halb so hoch, Beschriftung nennt Menge und Stand", (await tx("#lvlLabel")) === "½" && /bei 25 l \(½\) ggü\. Ø/.test(s5) && Math.abs(eur(s5) * 2 - eur(s0)) <= 0.03, [s0, s5]);
+      check("Füllstand: Auswahl bleibt gespeichert (3 Tage)", await p.evaluate(() => { const x = JSON.parse(localStorage.getItem("lvl")); return x.k === "0.5" && Date.now() - x.at < 5000; }));
+      await pick("res"); const sr = await sv();
+      check("Füllstand: Reserve → 46,5 l nachtanken, Ersparnis etwa wie bei leerem Tank", /bei 46,5 l \(Reserve\) ggü\. Ø/.test(sr) && Math.abs(eur(sr) - eur(s0) * 46.5 / 50) <= 0.03, [s0, sr]);
+      await pick("0.75"); const s7 = await sv();
+      check("Füllstand: ¾ → Ersparnis nur für 12,5 l", /bei 12,5 l \(¾\) ggü\. Ø/.test(s7) && eur(s7) < eur(s5), [s5, s7]);
+      // kleiner Tank, hoher Verbrauch: bei ¼ reichen nur ≈ 4 km → weiter entfernte Tankstellen sind „außer Reichweite“
+      await p.evaluate(() => { localStorage.setItem("tank", "5"); localStorage.setItem("cons", "30"); }); await pick("0.25");
+      const farP = await p.$$eval("#main .list .item", (a) => a.filter((x) => /net erreichbar|außer Reichweite/.test(x.textContent)).length), heroP = await tx("#main .hero, #main .empty");
+      check("Füllstand: Tankstellen außerhalb 90 % der Reichweite sind markiert und nie die „Günstigste“", farP >= 1 && !/net erreichbar|außer Reichweite/.test(heroP), { farP, heroP: heroP.slice(0, 160) });
+      await p.evaluate(() => { localStorage.removeItem("tank"); localStorage.removeItem("cons"); });
+      await pick("0.5");
+      check("Füllstand: Tank-Rat und Details rechnen mit der gewählten Menge (25 l)", /25 l/.test(await tx("#main")), (await tx("#main")).slice(0, 300));
+      await pick("");
+      check("Füllstand: „Nicht angeben“ → wie bisher (volle Tankgröße)", (await tx("#lvlLabel")) === "–" && /bei 50 l ggü\. Ø/.test(await sv()) && await p.evaluate(() => localStorage.getItem("lvl")) === "null");
+    }
+
     // ---- E-Modus
     await p.click("#seg [data-f=ev]"); await p.waitForSelector("#evBody .list .rtitem", T);
     check("E-Modus: ⚡ Strom aktiv, Ladestationen mit Preis in €/kWh", /Strom/.test(await tx("#seg .on")) && /€\/kWh/.test(await tx("#evBody .hero")) && (await n("#evBody .rtitem")) >= 5);
     check("E-Modus: Ladedaten ohne GitHub-Preisdaten, genau eine Umkreissuche", state.loc === 1, state.loc);
+    {
+      await p.click("#btnLevel"); await p.waitForSelector("#dlgLevel[open]");
+      const title = await tx("#lvlTitle"), sub = await tx('[data-lvlk="0.5"]'); await p.click('[data-lvlk="0.5"]'); await p.waitForTimeout(250);
+      check("Füllstand (E-Modus): eigener Akkustand 🔋 in kWh, getrennt vom Tankfüllstand", title === "Akkustand" && /≈ 15 kWh/.test(sub) && (await tx("#lvlIcon")) === "🔋" && (await tx("#lvlLabel")) === "½" && await p.evaluate(() => localStorage.getItem("lvl")) === "null", { title, sub });
+      check("Füllstand (E-Modus): Ersparnis bei 15 kWh (½)", !(await p.$("#evBody .hero .save")) || /bei 15 kWh \(½\) ggü\. Ø/.test(await tx("#evBody .hero .save")), await tx("#evBody .hero .save"));
+      await p.click("#btnLevel"); await p.click('[data-lvlk=""]'); await p.waitForTimeout(150);
+    }
     check("E-Modus: Belegung – frische Meldung „frei“, alte „nicht aktuell“", await p.evaluate(() => { const r = Strom.rows().all; return r.some((v) => v.known && v.free > 0) && r.some((v) => v.stale); }));
     await p.click("[data-evkw='50']");
     check("E-Modus: Filter ≥ 50 kW zeigt nur Schnelllader", (await n("#evBody .rtitem")) > 0 && await p.$$eval("#evBody .rtitem .addr", (a) => a.filter((x) => /kW/.test(x.textContent)).every((x) => +x.textContent.match(/(\d+(?:,\d)?) kW/)[1].replace(",", ".") >= 50)));
@@ -124,6 +154,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     check("Route (E-Modus): Ladestationen an der Strecke", /STROM/.test(await tx(".rtsum")) && (await n("#rtBody .rtlist .rtitem")) >= 1);
     await p.click("#seg [data-f=e5]"); await p.waitForSelector("#rtBody .rthero", T);
     check("Route (Kraftstoff): Tankstellen an der Strecke", !/STROM/.test(await tx(".rtsum")) && (await n("#rtBody .rtlist .rtitem")) >= 1);
+    {
+      await p.click("#btnLevel"); await p.waitForSelector("#dlgLevel[open]"); await p.click('[data-lvlk="res"]'); await p.waitForSelector("#rtBody .rthero, #rtBody .rtlist", T); await p.waitForTimeout(400);
+            check("Füllstand (Route): Zeile mit Stand, Menge und Reichweite (Reserve · ≈ 46,5 l · 50 km)", /Reserve/.test(await tx("#rtBody .rtlevel")) && /46,5 l/.test(await tx("#rtBody .rtlevel")) && /50 km/.test(await tx("#rtBody .rtlevel")), await tx("#rtBody .rtlevel"));
+      // kleiner Tank, hoher Verbrauch: bei ¼ reichen nur ≈ 4 km → Tankstellen weiter vorn auf der Strecke sind „außer Reichweite“
+      await p.evaluate(() => { localStorage.setItem("tank", "5"); localStorage.setItem("cons", "30"); });
+      await p.click("#btnLevel"); await p.click('[data-lvlk="0.25"]'); await p.waitForTimeout(500);
+      const far = await p.$$eval("#rtBody .rtitem", (a) => a.filter((x) => /net erreichbar|außer Reichweite/.test(x.textContent)).length), hero = await tx("#rtBody .rthero, #rtBody .empty, #rtBody .rtsum");
+      check("Füllstand (Route): Tankstellen jenseits von 90 % der Reichweite sind „außer Reichweite“ und nie die beste", far >= 1 && !/net erreichbar|außer Reichweite/.test(await tx("#rtBody .rthero")), { far, hero: hero.slice(0, 200) });
+      await p.evaluate(() => { localStorage.removeItem("tank"); localStorage.removeItem("cons"); });
+      await p.click("#btnLevel"); await p.click('[data-lvlk=""]'); await p.waitForTimeout(300);
+    }
     await p.click("#seg [data-f=ev]"); await p.click("#tabbar [data-tab=preise]"); await p.waitForSelector("#evBody .list .rtitem", T);
 
     // ---- Spritbüchle
@@ -210,6 +251,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const W = ANDROID ? [360, 412] : [320, 390], widths = [];
     for (const w of W) { await p.setViewportSize({ width: w, height: 760 });
       for (const t of ["preise", "route", "verlauf", "tankbuch"]) { await p.click(`#tabbar [data-tab=${t}]`); await p.waitForTimeout(250); const sw = await p.evaluate(() => document.documentElement.scrollWidth);
+        if (t === "preise") { const r = await p.evaluate(() => { const a = document.querySelector("#btnLoc").getBoundingClientRect(), b = document.querySelector("#btnLevel").getBoundingClientRect(); return { dy: Math.abs(a.top - b.top), right: b.right, h: b.height, w: b.width }; }); if (r.dy > 4 || r.right > w) widths.push(`Füllstandsknopf@${w}: ${JSON.stringify(r)}`); }
         if (sw > w) widths.push(`${t}@${w}: ${sw} · ${await p.evaluate((w) => [...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > w + 1 && e.offsetParent && !e.closest(".leaflet-container, .cw, svg")).slice(0, 4).map((e) => e.tagName + "." + e.className + " " + Math.round(e.getBoundingClientRect().right) + " «" + e.outerHTML.slice(0, 90).replace(/\s+/g, " ") + "»").join(" | "), w)}`); } }
     check(`Schmale Bildschirme (${W.join(", ")} px): kein seitliches Scrollen in allen Bereichen`, widths.length === 0, widths);
     await p.setViewportSize(devices[DEVICE].viewport);
@@ -231,11 +273,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       await p9.click("#tabbar [data-tab=tankbuch]"); await p9.waitForTimeout(300); await ax(sc("Spritbüchle"));
       await p9.click("#tabbar [data-tab=preise]"); await p9.click("#btnSettings"); await p9.waitForTimeout(250); await ax(sc("Einstellungen")); await p9.click("#btnDlgCancel");
       await p9.click("#btnLoc"); await p9.waitForTimeout(250); await ax(sc("Ortswahl")); await p9.click("#btnLocDone");
+      await p9.click("#btnLevel"); await p9.waitForSelector("#dlgLevel[open]"); await ax(sc("Füllstand")); await p9.click("#btnLevelClose");
       await p9.click("#seg [data-f=ev]"); await p9.waitForSelector("#evBody .list .rtitem", T); await ax(sc("E-Modus"));
       await p9.click("#evBody .rtitem:has(.p b) .item >> nth=0"); await p9.waitForTimeout(250); await ax(sc("E-Modus Details"));
       await p9.click("[data-cardopen]"); await p9.waitForSelector("#dlgCard[open]"); await ax(sc("Ladekarte")); await p9.click("#btnCardClose");
     }
-    check("Barrierefreiheit: axe-core findet keine Verstöße (Preise, Karte, Details, Route, Verlauf, Spritbüchle, Einstellungen, Ortswahl, E-Modus, Ladekarte; hell und dunkel)", axeBad.length === 0, axeBad.slice(0, 12));
+    check("Barrierefreiheit: axe-core findet keine Verstöße (Preise, Karte, Details, Route, Verlauf, Spritbüchle, Einstellungen, Ortswahl, Füllstand, E-Modus, Ladekarte; hell und dunkel)", axeBad.length === 0, axeBad.slice(0, 12));
     await p9.close();
 
     // ---- Ebenen: Karten (Leaflet, Ebenen bis 1000) dürfen nicht über die Leiste unten und die Sortenwahl oben reichen

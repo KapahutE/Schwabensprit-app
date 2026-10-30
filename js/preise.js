@@ -192,12 +192,15 @@ function preiseHtml() {
     h += `<div class="card notice"><span class="ic">ℹ️</span><div><b>Dieser Ort liegt außerhalb deiner Bases.</b> Für Live-Preise trage unter ⚙ deinen Tankerkönig-Schlüssel ein.</div></div>`;
 
   const lv = levelFn();
+  // Füllstand: Tankstellen außerhalb der Reichweite zählen nicht für „Günstigste“, Ersparnis und „besser mit Anfahrt“
+  const range = RANGE(), far = (s) => !inReach(s.dist * ROAD, range), NEEDL = NEED(), NEEDT = needTxt();
   const withPrice = view.stations.filter((s) => hasPrice(s)).sort((a, b) => a[fuel] - b[fuel] || a.dist - b.dist);
   const others = view.stations.filter((s) => !hasPrice(s)).sort((a, b) => a.dist - b.dist);
-  const best = withPrice[0];
-  const avgNow = mean(withPrice.map((s) => s[fuel]));
-  const near = withPrice.length ? withPrice.reduce((a, b) => a.dist <= b.dist ? a : b) : null;
-  const smart = withPrice.length ? withPrice.reduce((a, b) => fillCost(a) <= fillCost(b) ? a : b) : null;
+  const okPrice = withPrice.filter((s) => !far(s));
+  const best = okPrice[0];
+  const avgNow = mean(okPrice.map((s) => s[fuel]));
+  const near = okPrice.length ? okPrice.reduce((a, b) => a.dist <= b.dist ? a : b) : null;
+  const smart = okPrice.length ? okPrice.reduce((a, b) => fillCost(a) <= fillCost(b) ? a : b) : null;
   let drive = "";
   if (best && near && best.id !== near.id && best.dist != null) {
     const net = fillCost(near) - fillCost(best), trip = km(2 * best.dist * ROAD);
@@ -218,20 +221,22 @@ function preiseHtml() {
     h += `<section class="card hero">
       <span class="eyebrow">${say("Am billigschde", "Günstigste")} · ${FUELS[fuel]} · ${radius} km</span>
       <div class="pricerow"><div class="price">${priceN(best[fuel])}<span class="cur">€</span></div>
-        ${withPrice.length > 1 && save > 0.0005 ? `<div class="save"><span class="eyebrow">${say("Gspart", "Ersparnis")}</span><b>${eur2(save * TANK())}</b><span>bei ${fmtNum(TANK(), 0)} l ggü. Ø</span></div>` : ""}</div>
+        ${okPrice.length > 1 && save > 0.0005 ? `<div class="save"><span class="eyebrow">${say("Gspart", "Ersparnis")}</span><b>${eur2(save * NEEDL)}</b><span>bei ${NEEDT} ggü. Ø</span></div>` : ""}</div>
       <div class="station">${badge(best, lv(best), "lg")}
         <div style="min-width:0"><div class="where">${esc(best.brand)} · ${esc(best.place)}</div>
         <div class="sub">${esc(best.street)} · ${km(best.dist)}${stt.short ? " · " + esc(stt.short) : ""}</div></div></div>
       <div class="row" id="heroPills">
-        ${withPrice.length > 1 && save > 0.0005 ? pill(-save, `${ct(-save)} unter Ø`) : ""}
+        ${okPrice.length > 1 && save > 0.0005 ? pill(-save, `${ct(-save)} unter Ø`) : ""}
       </div>
-      ${SW() && withPrice.length > 1 && save > 0.0005 ? `<p class="quip">🥨 ${brezel(save * TANK())}</p>` : ""}
+      ${SW() && okPrice.length > 1 && save > 0.0005 ? `<p class="quip">🥨 ${brezel(save * NEEDL)}</p>` : ""}
       ${drive && !alt ? `<p class="quip">${drive}</p>` : ""}
       <div class="row two">
         <button class="btn" data-route="${esc(best.id)}">${NAV} Route</button>
         <button class="btn secondary" data-detail="${esc(best.id)}">Details</button>
       </div>${alt}
     </section>`;
+  } else if (withPrice.length) {
+    h += `<div class="card empty"><div class="bigic">⛽</div><b>${say("Koi Tankstell in Reichweit", "Keine Tankstelle in Reichweite")}</b><p>${say(`Bei ≈ ${fmtNum(range, 0)} km Reichweit isch koi Tankstell mit ${FUELS[fuel]} erreichbar.`, `Bei ≈ ${fmtNum(range, 0)} km Reichweite ist keine Tankstelle mit ${FUELS[fuel]} erreichbar.`)}</p></div>`;
   } else if (view.src.type !== "none") {
     h += `<div class="card empty"><div class="bigic">🌙</div><b>${say("Grad hot älles zu", "Gerade alles zu")}</b><p>${say(`Im Umkreis vo ${radius} km hot koi Tankstell mit ${FUELS[fuel]} offa. Morga isch au no a Dag.`, `Im Umkreis von ${radius} km ist keine Tankstelle mit ${FUELS[fuel]} geöffnet.`)}</p></div>`;
   }
@@ -255,11 +260,12 @@ function preiseHtml() {
       for (const s of list.slice(0, n)) {
         const has = hasPrice(s), stt = state(s);
         const d = has && best ? s[fuel] - best[fuel] : null;
-        h += `<button class="item${has ? "" : " closed"}" data-detail="${esc(s.id)}">
+        const out = has && far(s);
+        h += `<button class="item${has && !out ? "" : " closed"}" data-detail="${esc(s.id)}">
           ${badge(s, lv(s))}
           <div class="info"><div class="name"><span>${esc(s.brand)}</span>${isFav(s.id) ? `<span class="favstar">★</span>` : ""}${stt.open && stt.short ? `<span class="tag">${esc(stt.short)}</span>` : ""}</div>
             <div class="addr">${km(s.dist)} · ${esc(s.place)}, ${esc(s.street)}</div></div>
-          <div class="p">${has ? `<b>${price(s[fuel])}</b><div class="d">${d ? ct(d) : "günstigste"}</div>` : `<div class="d">${stt.open ? "kein " + FUELS[fuel] : "geschlossen"}${!stt.open && stt.short ? "<br>" + esc(stt.short) : ""}</div>`}</div>
+          <div class="p">${has ? `<b>${price(s[fuel])}</b><div class="d">${out ? say("net erreichbar", "außer Reichweite") : d ? ct(d) : "günstigste"}</div>` : `<div class="d">${stt.open ? "kein " + FUELS[fuel] : "geschlossen"}${!stt.open && stt.short ? "<br>" + esc(stt.short) : ""}</div>`}</div>
           ${CHEV}</button>`;
       }
       if (!showAll && list.length > LIST_TOP)
@@ -315,7 +321,7 @@ function whenHead(sum, P) {
   const at = (t) => hm(new Date(t)), where = (o) => `${esc(o.s.brand)}, ${esc(o.s.place)}`;
   const best = P.ok ? say(`geg ${at(P.bt)} Uhr: ≈ ${eurA(P.bo.v)} bei ${where(P.bo)}`, `gegen ${at(P.bt)} Uhr: ≈ ${eurA(P.bo.v)} bei ${where(P.bo)}`) : "";
   const gainCt = P.ok ? `<b>${fmtNum(P.gain * 100, 1)} ct</b>` : "";
-  const up = N ? fmtNum(N.info.avgUp * 100, 1) : "", L = fmtNum(TANK(), 0);
+  const up = N ? fmtNum(N.info.avgUp * 100, 1) : "", L = fmtNum(NEED(), 0);
   let ic = "⛽", title, sub = "", soon = false, go = null;
   if (stale) {
     ic = "⏳";
@@ -333,8 +339,8 @@ function whenHead(sum, P) {
     const left = 720 - mins;
     ic = "⏰"; soon = left <= 60;
     title = say(`${soon ? "Etz aber gschwind: " : ""}no <span class="cd">${dur(left)}</span> bis zum Preissprung`, `${soon ? "Jetzt schnell: " : ""}noch <span class="cd">${dur(left)}</span> bis zur Preiserhöhung`);
-    sub = say(`Um 12 Uhr ganget d'Preis nauf – im Schnitt um ${up} ct. Vorher tanka spart bei ${L} l rund ${eur2(N.info.avgUp * TANK())}.`,
-      `Um 12 Uhr steigen die Preise – im Schnitt um ${up} ct. Vorher tanken spart bei ${L} l rund ${eur2(N.info.avgUp * TANK())}.`);
+    sub = say(`Um 12 Uhr ganget d'Preis nauf – im Schnitt um ${up} ct. Vorher tanka spart bei ${L} l rund ${eur2(N.info.avgUp * NEED())}.`,
+      `Um 12 Uhr steigen die Preise – im Schnitt um ${up} ct. Vorher tanken spart bei ${L} l rund ${eur2(N.info.avgUp * NEED())}.`);
     if (P.wait && P.bt > noon12) {
       sub += say(` Billiger als etz wird's erscht wieder ${best} (${gainCt} weniger). Wer so lang warta ka, wartet – sonst vor 12 tanka.`,
         ` Günstiger als jetzt wird es erst wieder ${best} (${gainCt} weniger). Wer so lange warten kann, wartet – sonst vor 12 Uhr tanken.`);
@@ -398,22 +404,19 @@ function whenHead(sum, P) {
   const btn = go ? `<div class="row"><button class="btn secondary" data-detail="${esc(go.id)}">${say("Zur Tankstell", "Zur Tankstelle")}: ${esc(go.brand)}</button></div>` : "";
   return { soon, html: `<div class="tiphead"><div class="ic">${ic}</div><div><b>${title}</b><div class="sub">${sub}</div></div></div>${btn}` };
 }
-// ---- Tank-Rat: Füllstand (vom Nutzer angegeben, gilt 3 Tage) + Prognose + 12-Uhr-Regel → was jetzt sinnvoll ist
-const LVLS = [[0.1, "fast leer"], [0.25, "¼"], [0.5, "½"], [0.75, "¾"]];
-const lvlGet = () => { const x = store.getJ("lvl", null); return x && LVLS.some(([f]) => f === x.f) && Date.now() - x.at >= 0 && Date.now() - x.at < 3 * 864e5 ? x : null; };
+// ---- Tank-Rat: Füllstand (⛽ neben dem Ort, gilt 3 Tage) + Prognose + 12-Uhr-Regel → was jetzt sinnvoll ist
 function tankrat(P) {
-  const x = lvlGet();
-  const chips = LVLS.map(([f, t]) => `<button class="chip ${x?.f === f ? "on" : ""}" data-lvl="${f}" aria-pressed="${x?.f === f}">${t}</button>`).join("");
+  const x = levelGet("fuel");
   let txt = "";
   if (x) {
-    const range = Math.round(x.f * TANK() / CONS() * 100), fill = (1 - x.f) * TANK(), L = fmtNum(fill, 0);
+    const range = Math.round(RANGE()), fill = NEED(), L = fmtNum(fill, 0);
     const noonUp = noonCtx && new Date().getHours() < 12 && !noonStale() ? noonCtx.info.avgUp : 0;
     if (range < 100) txt = say(`⚠ Reichweite bloß ≈ ${range} km – etz tanka, net uff en günstigera Preis warta.`, `⚠ Reichweite nur ≈ ${range} km – jetzt tanken, nicht auf einen günstigeren Preis warten.`);
     else if (P?.ok && P.wait) txt = say(`Reichweite ≈ ${range} km – du kasch warta: geg ${hm(new Date(P.bt))} Uhr ≈ ${eur2(P.gain * fill)} billiger (${L} l).`, `Reichweite ≈ ${range} km – du kannst warten: gegen ${hm(new Date(P.bt))} Uhr ≈ ${eur2(P.gain * fill)} günstiger (${L} l).`);
     else if (noonUp > 0.002) txt = say(`Reichweite ≈ ${range} km – vor 12 Uhr tanka spart ≈ ${eur2(noonUp * fill)} (${L} l).`, `Reichweite ≈ ${range} km – vor 12 Uhr tanken spart ≈ ${eur2(noonUp * fill)} (${L} l).`);
     else txt = say(`Reichweite ≈ ${range} km – koi Grund z'warta, du tankscht ≈ ${L} l.`, `Reichweite ≈ ${range} km – kein Grund zu warten, du tankst ≈ ${L} l.`);
   }
-  return { txt, html: `<div class="tankrat"><div class="chips"><span class="lbl">${say("Dein Tank", "Dein Tank")}</span>${chips}</div>${txt ? "" : `<p class="small" style="margin:6px 0 0">${say("Wie voll isch dr Tank? Dann sag i dir, ob warta sich lohnt.", "Wie voll ist der Tank? Dann sagt die App, ob Warten sich lohnt.")}</p>`}</div>` };
+  return { txt, html: txt ? "" : `<p class="small" style="margin:0">${say("Wie voll isch dr Tank? Mit em ⛽ obe rechnet d'App gnauer.", "Wie voll ist der Tank? Mit dem ⛽ oben rechnet die App genauer.")}</p>` };
 }
 function renderWhen(headOnly = false) {
   const el = $("#when");

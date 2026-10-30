@@ -2,7 +2,12 @@
 
 Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) steht in den Einstellungen unter „Anzeige-Diagnose“.
 
-## 30.10.2026
+## 30.10.2026 – Tankfüllstand
+- Neuer Knopf ⛽ neben dem Ort: ¾ · ½ · ¼ · Reserve (50 km Restreichweite) · Nicht angeben (wie bisher), gilt 3 Tage; im E-Modus eigener Akkustand 🔋
+- Ersparnis, Fahrtkosten mit Hin- und Rückfahrt, „Mit Hin- und Rückfahrt besser“, Tank-Rat, 12-Uhr-Hinweis, Route („Nachtanken inkl. Umweg“) und Ladekosten rechnen mit der Menge, die zum vollen Tank fehlt (z. B. ½ bei 50 l → 25 l), statt mit der ganzen Tankgröße
+- Reichweitenprüfung: Tankstellen jenseits von 90 % der Restreichweite sind „außer Reichweite“ und zählen nicht als günstigste; bei keiner erreichbaren Tankstelle ein eigener Hinweis
+- Einstellungen: „Tankgröße (Liter)“ und „Akkugröße E-Modus (kWh)“ eindeutig benannt; der alte Tank-Rat-Schalter entfällt (Übernahme der Auswahl)
+- Konzept und Berechnungen: `docs/TANKFUELLSTAND.md`; neue Prüfungen (Rechnung, Ablauf, Bedienung, Route, Barrierefreiheit)
 - Neue Homebase G (Göppingen, Hermann-Hesse-Realschule, 25 km) im Daten-Repository; Daten und Verlauf bauen sich mit den nächsten Abrufen auf
 
 ## 26.10.2026 – Schlankere Startseite und Verlauf

@@ -16,7 +16,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
 <title>Schwabensprit</title>
-<link rel="stylesheet" href="app.css?v=b5ffa896">
+<link rel="stylesheet" href="app.css?v=f97b9fea">
 </head>
 <body>
 <div id="ptr"><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></div></div>
@@ -48,11 +48,12 @@
   </div>
 </header>
 <div class="locrow" role="region" aria-label="Ort und Datenstand">
-  <button class="locbtn" id="btnLoc" aria-label="Ort und Radius wählen">
+  <div class="locline"><button class="locbtn" id="btnLoc" aria-label="Ort und Radius wählen">
     <svg class="lp" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
     <span id="locLabel">Ort wählen</span>
     <svg class="cv" width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
   </button>
+  <button class="lvlbtn" id="btnLevel" type="button" aria-label="Tankfüllstand wählen"><span id="lvlIcon" aria-hidden="true">⛽</span><span id="lvlLabel">–</span></button></div>
   <span class="stand" id="stand"></span>
 </div>
 
@@ -145,6 +146,15 @@
   </div>
 </dialog>
 
+<dialog id="dlgLevel">
+  <div class="inner">
+    <h3 id="lvlTitle">Tankfüllstand</h3>
+    <p class="small" id="lvlHint"></p>
+    <div class="optgroup" id="lvlOpts"></div>
+    <div class="actions"><button class="btn secondary block" type="button" id="btnLevelClose">Abbrechen</button></div>
+  </div>
+</dialog>
+
 <dialog id="dlgLoc">
   <div class="inner">
     <h3>Ort &amp; Radius</h3>
@@ -187,9 +197,9 @@
     <label for="inHome">Meine Homebase <span class="small">(Vergleich im <span class="tbname">Tankbuch</span>)</span></label>
     <select id="inHome"></select>
     <div class="two-in">
-      <div><label for="inTank">Tankmenge (Liter)</label><input id="inTank" type="text" inputmode="decimal" placeholder="50"></div>
+      <div><label for="inTank">Tankgröße (Liter)</label><input id="inTank" type="text" inputmode="decimal" placeholder="50"></div>
       <div><label for="inCons">Verbrauch (l/100 km)</label><input id="inCons" type="text" inputmode="decimal" placeholder="7"></div>
-      <div><label for="inKwh">Ladung E-Modus (kWh)</label><input id="inKwh" type="text" inputmode="decimal" placeholder="30"></div>
+      <div><label for="inKwh">Akkugröße E-Modus (kWh)</label><input id="inKwh" type="text" inputmode="decimal" placeholder="30"></div>
       <div><label for="inEvCons">E-Auto (kWh/100 km)</label><input id="inEvCons" type="text" inputmode="decimal" placeholder="18"></div>
     </div>
     <label>Ladekarte <span class="small">(E-Modus: eigene Preise für Karte/App – werden regelmäßig abgefragt)</span></label>
@@ -249,14 +259,15 @@
 <div id="instBar" hidden><span>📲 Als App installieren – startet schneller, auch ohne Netz</span><button class="btn" id="btnInstBar" type="button">Installieren</button><button id="btnInstNo" type="button" aria-label="Hinweis schließen">✕</button></div>
 <div class="toast" id="toast"></div>
 
-<script src="js/grund.js?v=b5ffa896"></script>
-<script src="js/preise.js?v=b5ffa896"></script>
-<script src="js/verlauf.js?v=b5ffa896"></script>
-<script src="js/belegleser.js?v=b5ffa896"></script>
-<script src="js/routegeo.js?v=b5ffa896"></script>
-<script src="js/route.js?v=b5ffa896"></script>
-<script src="js/ladekarte.js?v=b5ffa896"></script>
-<script src="js/strom.js?v=b5ffa896"></script>
-<script src="js/tankbuch.js?v=b5ffa896"></script>
+<script src="js/grund.js?v=f97b9fea"></script>
+<script src="js/fuellstand.js?v=f97b9fea"></script>
+<script src="js/preise.js?v=f97b9fea"></script>
+<script src="js/verlauf.js?v=f97b9fea"></script>
+<script src="js/belegleser.js?v=f97b9fea"></script>
+<script src="js/routegeo.js?v=f97b9fea"></script>
+<script src="js/route.js?v=f97b9fea"></script>
+<script src="js/ladekarte.js?v=f97b9fea"></script>
+<script src="js/strom.js?v=f97b9fea"></script>
+<script src="js/tankbuch.js?v=f97b9fea"></script>
 </body>
 </html>

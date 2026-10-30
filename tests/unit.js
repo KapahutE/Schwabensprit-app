@@ -164,4 +164,31 @@ const fs = require("fs"), path = require("path"), vm = require("vm"), { spawnSyn
   const frame = fs.readFileSync(path.join(ROOT, "index.html"), "utf8").match(/<iframe id="repFrame"[^>]*>/)[0];
   check("Wochenreport: Rahmen mit sandbox, ohne allow-same-origin und allow-scripts", /sandbox="/.test(frame) && !/allow-same-origin|allow-scripts/.test(frame), frame);
 }
+// ---- 9. Füllstand: nötige Menge, Reichweite, Kosten inkl. Anfahrt, Auswahl (3 Tage gültig, getrennt für Sprit und Strom)
+{
+  const ctx = sandbox(["fuellstand.js"], { evMode: false, TANK: () => 50, CONS: () => 7, fmtNum: (v, d = 2) => v.toFixed(d).replace(".", ","), Date });
+  const R = (code) => vm.runInContext(code, ctx), near = (a, b, e = 0.005) => Math.abs(a - b) <= e;
+  const need = (k) => R(`levelNeed(50, 7, ${JSON.stringify(k)})`), range = (k) => R(`levelRange(50, 7, ${JSON.stringify(k)})`);
+  check("Füllstand: nötige Menge bei 50 l – ¾ 12,5 · ½ 25 · ¼ 37,5 · Reserve 46,5 · nicht angegeben 50", [["0.75", 12.5], ["0.5", 25], ["0.25", 37.5], ["res", 46.5], [null, 50]].every(([k, v]) => near(need(k), v)), ["0.75", "0.5", "0.25", "res", null].map(need));
+  check("Füllstand: Restreichweite bei 7 l/100 km – 536 · 357 · 179 · Reserve genau 50 km · nicht angegeben ohne Wert", [["0.75", 535.7], ["0.5", 357.1], ["0.25", 178.6], ["res", 50]].every(([k, v]) => near(range(k), v, 0.1)) && range(null) === null);
+  check("Füllstand: Reserve ist 50 km × Verbrauch (bei 10 l/100 km 5 l, Tank 50 l → 45 l nötig)", near(R("levelNeed(50, 10, 'res')"), 45) && near(R("levelRest(50, 10, 'res')"), 5));
+  check("Füllstand: Reserve übersteigt nie den Tank (kleiner Tank 3 l, 8 l/100 km → Rest höchstens 3 l, nötig ≥ 0)", R("levelRest(3, 8, 'res')") === 3 && R("levelNeed(3, 8, 'res')") === 0);
+  check("Füllstand: Reichweite – Ziel bis 90 % der Restreichweite erreichbar, ohne Angabe immer", R("inReach(45, 50)") && !R("inReach(45.1, 50)") && R("inReach(999, null)"));
+  // Beispiel: Preis 1,80 € bzw. 2,00 €, 4 ct/l günstiger; Hin- und Rückfahrt mit 1,3 Straßenfaktor, 7 l/100 km
+  check("Füllstand: Kosten mit Anfahrt – 25 l, 0 km → 25 × Preis; 5 km → + 2 × 5 × 1,3 × 0,07 l", near(R("costWith(1.8, 25, 0, 7)"), 45, 1e-9) && near(R("costWith(1.8, 25, 5, 7)"), 1.8 * (25 + 0.91), 1e-9));
+  check("Füllstand: lohnt sich bis … km – 4 ct/l bei 2,00 €: 50 l → 5,5 km, 25 l → 2,7 km (halbe Menge, halbe Strecke)", near(R("breakEvenKm(0.04, 50, 2, 7)"), 5.49, 0.01) && near(R("breakEvenKm(0.04, 25, 2, 7)"), 2.75, 0.01));
+  check("Füllstand: Mengenanzeige 25 · 37,5 · 46,5 (keine gerundeten Liter)", R("qty(25)") === "25" && R("qty(37.5)") === "37,5" && R("qty(46.5)") === "46,5");
+  // Auswahl: gespeichert, 3 Tage, Sprit und Strom getrennt, alter Tank-Rat wird übernommen
+  const st = R("store"), DAY = 864e5, now = Date.now();
+  R("levelSet('fuel', '0.5')"); R("levelSet('ev', 'res')");
+  check("Füllstand: Auswahl wird gespeichert, Sprit und Strom unabhängig", R("levelGet('fuel')").k === "0.5" && R("levelGet('ev')").k === "res");
+  check("Füllstand: ¼ → Mengenfunktion NEED() nutzt Tankgröße (50 l → 37,5 l), E-Modus eigener Akku (30 kWh, Reserve 50 km × 18 kWh → 25,5 kWh)", (R("levelSet('fuel', '0.25')"), near(R("NEED()"), 37.5)) && near(R("NEED('ev')"), 30 - 9, 1e-9), [R("NEED()"), R("NEED('ev')")]);
+  st.setJ("lvl", { k: "0.5", at: now - 2.9 * DAY }); check("Füllstand: nach 2,9 Tagen noch gültig", R("levelGet('fuel')")?.k === "0.5");
+  st.setJ("lvl", { k: "0.5", at: now - 3.1 * DAY }); check("Füllstand: nach 3,1 Tagen abgelaufen → wie nicht angegeben (volle Tankgröße)", R("levelGet('fuel')") === null && R("NEED()") === 50 && R("RANGE()") === null);
+  st.setJ("lvl", { k: "0.5", at: now + DAY }); check("Füllstand: Zeitstempel in der Zukunft (falsche Gerätezeit) wird nicht übernommen", R("levelGet('fuel')") === null);
+  st.setJ("lvl", { f: 0.1, at: now }); check("Füllstand: alter Tank-Rat „fast leer“ (10 %) wird zu Reserve übernommen", R("levelGet('fuel')")?.k === "res");
+  st.setJ("lvl", { f: 0.5, at: now }); check("Füllstand: alter Tank-Rat „halb“ wird zu ½ übernommen", R("levelGet('fuel')")?.k === "0.5");
+  st.setJ("lvl", { k: "0.9", at: now }); check("Füllstand: unbekannter Wert wird ignoriert", R("levelGet('fuel')") === null);
+  R("levelSet('fuel', null)"); check("Füllstand: „Nicht angeben“ löscht die Auswahl", R("levelGet('fuel')") === null);
+}
 done("Unit-Tests");

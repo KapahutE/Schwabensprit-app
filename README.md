@@ -25,7 +25,8 @@ Leiste unten mit drei Bereichen:
 - **Service Worker** (`sw.js`): App-Dateien kommen aus dem Speicher (je Version unveränderlich, `?v=`-Hash), die Startseite sofort aus dem Speicher und wird im Hintergrund geprüft; gibt es eine neue Version, erscheint „Neue Version bereit – tippen zum Neuladen“. Der Belegleser (`ocr/`, 13 MB) wird bei erster Nutzung gespeichert. Preisdaten laufen nie über den Worker.
 - **Zwischenspeicher der Daten** (IndexedDB `schwabensprit-cache`, nur auf dem Gerät): zuletzt geladene Preise der Basis und Ladestationen des letzten Orts. Beim Start erscheint sofort dieser Stand („Gespeichert · Stand …“), danach kommen die frischen Daten; ohne Netz bleibt er stehen. „Ortsdaten löschen“ leert ihn.
 - **Content-Security-Policy** (Meta-Tag in `index.html`): Skripte nur aus der App und unpkg (Karte, mit Prüfsumme), Verbindungen nur zu den benötigten Diensten, keine Inline-Skripte. Wer in `endpoints.json` einen anderen Dienst einträgt, muss dessen Adresse auch in der Richtlinie ergänzen. Der Belegleser braucht `wasm-unsafe-eval` (iOS ab 16.4).
-- **Tank-Rat** (Preise, in „Wann tanken?“): Füllstand angeben (fast leer, ¼, ½, ¾, gilt 3 Tage) → Reichweite, „jetzt tanken“ oder „warten spart ≈ …“ aus Prognose und 12-Uhr-Regel. **Kosten je 100 km** im E-Modus: Ladepreis × Verbrauch (⚙ „E-Auto kWh/100 km“), dazu der Sprit-Vergleich.
+- **Tankfüllstand** (⛽ neben dem Ort; ¾ · ½ · ¼ · Reserve = 50 km Restreichweite · Nicht angeben; gilt 3 Tage; im E-Modus eigener Akkustand 🔋): Ersparnis, Kosten mit Hin- und Rückfahrt, „mit Anfahrt besser“, Route und Ladekosten rechnen mit der Menge, die zum vollen Tank fehlt, statt mit der ganzen Tankgröße; Tankstellen jenseits von 90 % der Restreichweite sind „außer Reichweite“. Rechnungen und Beispiele: [`docs/TANKFUELLSTAND.md`](docs/TANKFUELLSTAND.md).
+- **Tank-Rat** (Preise, in „Wann tanken?“): nutzt den Füllstand → Reichweite, „jetzt tanken“ oder „warten spart ≈ …“ aus Prognose und 12-Uhr-Regel. **Kosten je 100 km** im E-Modus: Ladepreis × Verbrauch (⚙ „E-Auto kWh/100 km“), dazu der Sprit-Vergleich.
 
 ## iPhone und Android
 
@@ -48,7 +49,7 @@ Vorbereitung (einmalig): `npm ci && npx playwright install chromium`. Alles zusa
 | `npm run lint` | ESLint über `js/`, `sw.js` und `tests/` (undefinierte Namen, tote Variablen, Fehlerquellen; Konfiguration `eslint.config.js` kennt die gemeinsamen Namen der klassischen Skripte) |
 | `node tools/version.js --check` | die Versionsnummer `?v=…` in `index.html` passt zu `app.css` und `js/*.js` |
 | `npm run unit` | ohne Browser: Streckengeometrie, Belegleser, Spritbüchle-Verbrauch, Ladekarte, E-Modus-Logik, Geräteerkennung, Manifest, Versionsnummer, Skript-Liste, CSP-Hosts |
-| `npm run e2e` / `npm run e2e:android` | Chromium mit Playwright (iPhone 13 bzw. Pixel 7), feste Testdaten in `tests/fixtures/`, nachgestellte Dienste: Preise, E-Modus, Ladekarte, Route, Spritbüchle, Belegleser, CSP, Tippflächen, Offline-Start, Zurück-Taste, Installation, Ebenen der Karten, Hinweis zur Aktualisierung, **Barrierefreiheit (axe-core, WCAG 2.1 AA, hell und dunkel)** |
+| `npm run e2e` / `npm run e2e:android` | Chromium mit Playwright (iPhone 13 bzw. Pixel 7), feste Testdaten in `tests/fixtures/`, nachgestellte Dienste: Preise, E-Modus, Ladekarte, Route, Spritbüchle, Belegleser, CSP, Tippflächen, Offline-Start, Zurück-Taste, Installation, Ebenen der Karten, Hinweis zur Aktualisierung, Tankfüllstand, **Barrierefreiheit (axe-core, WCAG 2.1 AA, hell und dunkel)** |
 
 ## Dateien
 
@@ -57,6 +58,7 @@ Vorbereitung (einmalig): `npm ci && npx playwright install chromium`. Alles zusa
 | `index.html` | Grundgerüst (Kopf, Leiste, Dialoge) |
 | `app.css` | Aussehen (hell/dunkel) |
 | `js/grund.js` | Einstellungen, Daten laden, Ort/Radius, Bausteine, Diagramme, Bereiche, Start |
+| `js/fuellstand.js` | Tankfüllstand: nötige Menge, Reichweite, Kosten mit Anfahrt (rein), Auswahl mit Ablauf nach 3 Tagen, Knopf und Dialog |
 | `js/ladekarte.js` | E-Modus: „Meine Ladekarte“ – Eigeneingabe mit Eingabeprüfung und laufender Prüfung |
 | `js/strom.js` | E-Modus: Ladestationen und Ladepreise (MobiData BW OCPDB), Ansicht für Preise und Route |
 | `js/route.js` | Bereich Route: Routing (FOSSGIS OSRM, Ausweich Valhalla), Tankstellen am Weg, Preise Österreich (E-Control), Grenzvergleich, Karte, Übergabe an Karten-Apps |
