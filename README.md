@@ -1,7 +1,7 @@
 # Schwabensprit – App
 
 Oberfläche der Tankpreis-App. Sie enthält **keine Daten**: Preise, Orte und Reports lädt sie mit dem
-auf dem Gerät hinterlegten GitHub-Zugangsschlüssel aus dem Daten-Repository (das ist öffentlich lesbar, siehe `docs/DIENSTE.md`).
+auf dem Gerät hinterlegten GitHub-Zugangsschlüssel aus dem Daten-Repository (soll privat sein, siehe `docs/DIENSTE.md`, Entscheidung vom 30.10.2026).
 
 ## Aufbau
 
