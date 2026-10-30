@@ -20,7 +20,7 @@ Stand: 20.10.2026. Ziel: die App von einem persönlichen Werkzeug zu etwas mache
 2. **Lizenz des eigenen Codes** (z. B. MIT, GPL oder „alle Rechte vorbehalten“). Ohne Lizenzdatei gilt „alle Rechte vorbehalten“. Ich habe keine festgelegt.
 3. **Name und Marke** „Schwabensprit“ (Markenrecherche, Domain). Ich habe nichts geprüft.
 4. **Verantwortlicher für Datenschutz und Impressum** (Name, Anschrift, E-Mail): Entwürfe liegen in `docs/recht/` mit Platzhaltern; ob ein Impressum nötig ist, hängt von der Art des Angebots ab (privat/nicht geschäftsmäßig oder nicht) und sollte geprüft werden.
-5. **Tankerkönig anschreiben oder das Daten-Repository auf privat stellen:** Es ist öffentlich lesbar; Spiegeln und öffentliches Bereitstellen der Daten braucht laut Bedingungen eine Absprache (`DIENSTE.md`). Bei einem öffentlichen Angebot ohnehin nötig.
+5. **Tankerkönig anschreiben oder das Daten-Repository auf privat stellen** (Stand 30.10.2026: Umstellung auf privat wird nicht umgesetzt, die Frage bleibt offen): Es ist öffentlich lesbar; Spiegeln und öffentliches Bereitstellen der Daten braucht laut Bedingungen eine Absprache (`DIENSTE.md`). Bei einem öffentlichen Angebot ohnehin nötig.
 6. **Budget** für Betrieb (Domain, Karten-/Routing-Anbieter, ggf. kleiner Server) und die Frage, ob Daten bei Dritten liegen dürfen (z. B. externer Zeitgeber).
 
 ## Stufe 1 – Familie und Freunde (wenige Nutzer, kleiner Aufwand)
