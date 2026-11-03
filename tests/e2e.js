@@ -242,7 +242,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     // ---- Sicherheit und Bedienbarkeit
     check("CSP: keine Verstöße in allen Abläufen", state.csp.length === 0, state.csp);
     check("CSP: Inline-Skript wird blockiert", await p.evaluate(() => { window.__x = 0; const s = document.createElement("script"); s.textContent = "window.__x = 1"; document.head.append(s); return window.__x === 0; }));
-    const small = await p.evaluate(() => [...document.querySelectorAll(".chip, #seg button, .iconx, .iconbtn, #tabbar button")].filter((e) => e.offsetParent).map((e) => {
+    const small = await p.evaluate(() => [...document.querySelectorAll(".chip, #seg button, .iconx, .iconbtn, #tabbar button, .locbtn, .lvlbtn, .btn")].filter((e) => e.offsetParent).map((e) => {
       const r = e.getBoundingClientRect(), a = getComputedStyle(e, "::after"), ext = a.content !== "none" && a.position === "absolute" ? Math.max(0, -parseFloat(a.top) || 0) + Math.max(0, -parseFloat(a.bottom) || 0) : 0;
       return { t: (e.textContent || e.getAttribute("aria-label") || "").trim().slice(0, 14), h: Math.round(r.height + ext) };
     }).filter((x) => x.h < 44));
@@ -309,6 +309,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     for (const w of W) { await p.setViewportSize({ width: w, height: 760 });
       for (const t of ["preise", "route", "verlauf", "tankbuch"]) { await p.click(`#tabbar [data-tab=${t}]`); await p.waitForTimeout(250); const sw = await p.evaluate(() => document.documentElement.scrollWidth);
         if (t === "preise") { const r = await p.evaluate(() => { const a = document.querySelector("#btnLoc").getBoundingClientRect(), b = document.querySelector("#btnLevel").getBoundingClientRect(); return { dy: Math.abs(a.top - b.top), right: b.right, h: b.height, w: b.width }; }); if (r.dy > 4 || r.right > w) widths.push(`Füllstandsknopf@${w}: ${JSON.stringify(r)}`); }
+        if (t === "preise") { const c = await p.evaluate(() => { const b = document.querySelector("#btnLoc").getBoundingClientRect(), lr = document.querySelector("#locLabel .lr").getBoundingClientRect(), txt = document.querySelector("#locLabel").innerText.replace(/\s+/g, " ").trim(); return { ok: lr.width > 20 && lr.right <= b.right + 0.5 && lr.left >= b.left, aria: document.querySelector("#btnLoc").getAttribute("aria-label").includes(txt), txt }; }); if (!c.ok || !c.aria) widths.push(`Ortsknopf@${w}: Radius sichtbar/Name ${JSON.stringify(c)}`); }
         if (sw > w) widths.push(`${t}@${w}: ${sw} · ${await p.evaluate((w) => [...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > w + 1 && e.offsetParent && !e.closest(".leaflet-container, .cw, svg")).slice(0, 4).map((e) => e.tagName + "." + e.className + " " + Math.round(e.getBoundingClientRect().right) + " «" + e.outerHTML.slice(0, 90).replace(/\s+/g, " ") + "»").join(" | "), w)}`); } }
     check(`Schmale Bildschirme (${W.join(", ")} px): kein seitliches Scrollen in allen Bereichen`, widths.length === 0, widths);
     await p.setViewportSize(devices[DEVICE].viewport);

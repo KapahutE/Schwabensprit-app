@@ -3,7 +3,7 @@
 
 // =========================================================================== Tankbuch
 // Tankbelege fotografieren, mit Tesseract.js (Open Source, läuft komplett auf dem Gerät) auslesen,
-// prüfen, speichern und mit dem günstigsten Preis im Umkreis der Homebase zum Tankzeitpunkt vergleichen.
+// prüfen, speichern und mit dem günstigsten Preis im Umkreis der Regeladresse zum Tankzeitpunkt vergleichen.
 // Alles bleibt auf dem Gerät (IndexedDB) – Sicherung/Export als Datei.
 const tbDB = (() => {
   let p;
@@ -48,9 +48,9 @@ const num2 = (v) => { const x = parseFloat(String(v ?? "").replace(/\s/g, "").re
 const fmtL = (v) => v == null ? "–" : fmtNum(v, 2) + " l";
 const ctl = (v) => `${v > 0.0005 ? "+" : v < -0.0005 ? "−" : "±"}${fmtNum(Math.abs(v) * 100, 1)} ct/l`;
 
-// ---- Vergleich: günstigster und mittlerer Preis im Umkreis der Homebase zur Tankzeit (min-JJJJ-MM.json)
+// ---- Vergleich: günstigster und mittlerer Preis im Umkreis der Regeladresse zur Tankzeit (min-JJJJ-MM.json)
 const minCache = {};
-// Vergleichsregion: die Homebase, wenn die Tankstelle dort liegt (oder unbekannt ist), sonst die Base,
+// Vergleichsregion: die Regeladresse (bzw. ihr Gebiet), wenn die Tankstelle dort liegt (oder unbekannt ist), sonst die Base,
 // in der sie liegt – auswärts getankt wird nicht mit zu Hause verglichen. Außerhalb aller Bases: kein Vergleich.
 function regionOf(e) {
   const hb = homeBase(), s = e.station;
@@ -86,7 +86,7 @@ const verdictOf = (e) => {
   return { diff, best: diff <= 0.0005, beat: diff < -0.0005, vsAvg: (c.avg - e.ppl) * e.liters };
 };
 const cmpNote = (e) => e.cmp?.premium ? "Premium" : e.cmp?.outside ? "außerhalb" : e.cmp?.none ? "kein Vergleich" : "";
-// 6: Vergleiche neu berechnen (Homebase gewechselt, oder inzwischen Daten vorhanden)
+// 6: Vergleiche neu berechnen (Regeladresse gewechselt, oder inzwischen Daten vorhanden)
 let tbRecBusy = null;
 const tbSig = (e) => JSON.stringify([e.date, e.time, e.fuel, e.ppl, e.premium, e.station?.lat, e.station?.lng]);
 async function tbRecompute(all) {
@@ -209,7 +209,7 @@ async function stationOptions(selId, text) {
   paintStations(tbSel);
   return tbGuess;
 }
-// Liste nach Entfernung zur Homebase; mit Suchbegriff gefiltert („aral metz“)
+// Liste nach Entfernung zur Regeladresse; mit Suchbegriff gefiltert („aral metz“)
 function paintStations(cur = $("#tbSt").value || tbSel) {
   const hb = homeBase(), q = $("#tbStQ").value.toLowerCase().split(/\s+/).filter(Boolean);
   const d = (s) => hb && s.lat != null ? distKm(hb.lat, hb.lng, s.lat, s.lng) : 999;
@@ -217,7 +217,7 @@ function paintStations(cur = $("#tbSt").value || tbSel) {
   const list = tbStList.filter((s) => s.id !== tbGuess?.id && hit(s)).sort((a, b) => d(a) - d(b)).slice(0, q.length ? 80 : 400);
   $("#tbSt").innerHTML = `<option value="">– unbekannt / andere –</option>`
     + (tbGuess && hit(tbGuess) ? `<optgroup label="Erkannt"><option value="${esc(tbGuess.id)}">${esc(stLabel(tbGuess))}</option></optgroup>` : "")
-    + `<optgroup label="${q.length ? `${list.length} Treffer` : "Nach Entfernung zur Homebase"}">${list.map((s) => `<option value="${esc(s.id)}">${esc(stLabel(s))}</option>`).join("")}</optgroup>`;
+    + `<optgroup label="${q.length ? `${list.length} Treffer` : "Nach Entfernung zur Regeladresse"}">${list.map((s) => `<option value="${esc(s.id)}">${esc(stLabel(s))}</option>`).join("")}</optgroup>`;
   if (cur && ![...$("#tbSt").options].some((o) => o.value === cur)) {
     const s = tbStList.find((x) => x.id === cur);
     $("#tbSt").insertAdjacentHTML("afterbegin", `<option value="${esc(cur)}">${esc(s ? stLabel(s) : tbEdit?.station?.label || "gespeicherte Tankstelle")}</option>`);
@@ -323,9 +323,9 @@ async function saveTb() {
   renderTankbuch();
   celebrate(e);
 }
-// ---- Gratulation bei Bestpreis (oder günstiger als alles im Umkreis der Homebase)
+// ---- Gratulation bei Bestpreis (oder günstiger als alles im Umkreis der Regeladresse)
 function celebrate(e) {
-  const v = verdictOf(e), area = e.cmp?.baseName || homeBase()?.name || "der Homebase";
+  const v = verdictOf(e), area = e.cmp?.baseName || homeBase()?.name || "der Regeladresse";
   if (!v) {
     toast(e.cmp?.premium ? "Gespeichert ✓ – Premium-Sorte, daher ohne Preisvergleich."
       : e.cmp?.outside ? "Gespeichert ✓ – die Tankstelle liegt außerhalb des Datengebiets, daher ohne Preisvergleich."
@@ -338,7 +338,7 @@ function celebrate(e) {
     return;
   }
   const L = fmtNum(e.liters, 0);
-  $("#cgTitle").textContent = v.beat ? (e.cmp.home ? say("Billiger als älles drhoim!", "Günstiger als alles rund um die Homebase!") : say(`Billiger als älles rund um ${area}!`, `Günstiger als alles rund um ${area}!`)) : say("Bestpreis – sauber!", "Bestpreis getroffen!");
+  $("#cgTitle").textContent = v.beat ? (e.cmp.home ? say("Billiger als älles drhoim!", "Günstiger als alles rund um die Regeladresse!") : say(`Billiger als älles rund um ${area}!`, `Günstiger als alles rund um ${area}!`)) : say("Bestpreis – sauber!", "Bestpreis getroffen!");
   $("#cgText").innerHTML = (v.beat
     ? say(`Mit ${eurX(e.ppl)}/l warsch <b>${fmtNum(-v.diff * 100, 1)} ct</b> billiger als dr günstigschde Preis im Umkreis vo ${esc(area)}.`,
       `Mit ${eurX(e.ppl)}/l warst du <b>${fmtNum(-v.diff * 100, 1)} ct</b> günstiger als der günstigste Preis im Umkreis von ${esc(area)}.`)
@@ -372,7 +372,7 @@ function backupDue() {
 const csvNum = (v, d) => v == null ? "" : v.toFixed(d).replace(".", ",");
 function exportCsv() {
   const head = ["Datum", "Uhrzeit", "Tankstelle", "Sorte", "Liter", "Preis je Liter", "Betrag", "Kilometerstand", "Vollgetankt",
-    "Bestpreis Umkreis Homebase", "Ø Umkreis Homebase", "Abstand zum Bestpreis (ct/l)", "Gespart ggü. Ø (€)", "Notiz"];
+    "Bestpreis Umkreis Regeladresse", "Ø Umkreis Regeladresse", "Abstand zum Bestpreis (ct/l)", "Gespart ggü. Ø (€)", "Notiz"];
   const q = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
   const rows = [...tbEntries].reverse().map((e) => {
     const v = verdictOf(e);

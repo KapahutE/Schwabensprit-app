@@ -316,6 +316,7 @@ async function load(force = false, liveForce = force) {
   }
   if (seq !== loadSeq) return;
   migrateHome();   // bisherige Base → Regeladresse (einmalig)
+  flushTbRecompute();   // Tankbuch-Vergleiche nach Wechsel der Regeladresse
   const askPick = needLocPick() || (loc.mode === "home" && !homeAddr());
   if (loc.mode === "home" && !homeAddr()) loc = { mode: "base", baseId: null, auto: true };
   if (loc.mode === "base" && !bases.find((b) => b.id === loc.baseId)) loc = { mode: "base", baseId: bases[0]?.id, auto: true };
@@ -328,7 +329,7 @@ async function load(force = false, liveForce = force) {
   // Standort nur auf ca. 100 m gerundet speichern (der genaue Wert bleibt nur im Arbeitsspeicher)
   store.setJ("loc", loc.mode === "gps" ? { ...loc, lat: +loc.lat.toFixed(3), lng: +loc.lng.toFixed(3) } : loc);
   const c = center();
-  if (!c) { view = { error: new Error("Keine Bases konfiguriert") }; return render(); }
+  if (!c) { view = { error: new Error("Keine Preisdaten verfügbar") }; return render(); }
   const src = pickSource(c);
   if (src.base) store.set("lastBase", src.base.id);
   try {
@@ -514,7 +515,9 @@ function render() {
   });
   document.querySelectorAll("#seg button").forEach((b) => { const on = evMode ? b.dataset.f === "ev" : b.dataset.f === fuel; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
   const c = view?.center || (evMode ? center() : null);
-  $("#locLabel").textContent = c ? `${c.label} · ${evMode ? Math.min(radius, Strom.MAX_KM) : radius} km` : "Ort wählen";
+  const rkm = evMode ? Math.min(radius, Strom.MAX_KM) : radius;
+  $("#locLabel").innerHTML = c ? `<span class="lt">${esc(c.label)}</span><span class="lr"> · ${rkm} km</span>` : "Ort wählen";
+  $("#btnLoc").setAttribute("aria-label", c ? `${c.label} · ${rkm} km – Ort und Radius ändern` : "Ort und Radius wählen");
   const st = $("#stand");
   if (evMode && tab !== "tankbuch" && tab !== "route") st.innerHTML = "";   // Stand der Ladedaten setzt js/strom.js
   else if (view?.updated) {

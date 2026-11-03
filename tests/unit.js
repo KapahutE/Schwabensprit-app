@@ -194,7 +194,7 @@ const fs = require("fs"), path = require("path"), vm = require("vm"), { spawnSyn
 // ---- 10. Regeladresse: lokal gespeichert, Start, Übernahme der bisherigen Base, nutzbarer Radius, zuletzt benutzte Orte
 {
   const dk = (a, b, c, d) => { const p = Math.PI / 180, x = Math.sin((c - a) * p / 2) ** 2 + Math.cos(a * p) * Math.cos(c * p) * Math.sin((d - b) * p / 2) ** 2; return 12742 * Math.asin(Math.sqrt(x)); };
-  const BS = fixture("bases.json"), mk = (loc = { mode: "base", baseId: null }) => sandbox(["regel.js"], { distKm: dk, bases: BS, loc, radius: 10, geoSearch: async () => [], getPosition: async () => ({}), center: () => null, load() {}, homeBase: () => null });
+  const BS = fixture("bases.json"), mk = (loc = { mode: "base", baseId: null }) => sandbox(["regel.js"], { distKm: dk, bases: BS, loc, radius: 10, evMode: false, geoSearch: async () => [], getPosition: async () => ({}), center: () => null, load() {}, homeBase: () => null });
   const ctx = mk(), R = (code) => vm.runInContext(code, ctx);
   check("Regeladresse: ohne Eintrag keine, gespeicherte wird auf 4 Stellen gerundet gelesen", R("homeAddr()") === null && (R("homeSet({ lat: 48.69461234, lng: 9.21081234, label: 'Marktplatz, Filderstadt' })"), JSON.stringify(R("homeAddr()")) === JSON.stringify({ lat: 48.6946, lng: 9.2108, label: "Marktplatz, Filderstadt" })));
   R("homeClear()"); check("Regeladresse: Entfernen", R("homeAddr()") === null);
@@ -224,5 +224,13 @@ const fs = require("fs"), path = require("path"), vm = require("vm"), { spawnSyn
   const cP = mk({ mode: "place", lat: 48.4, lng: 9.99, label: "Ulm" }); check("Ortswahl: ein gewählter Ort braucht keine Nachfrage", vm.runInContext("needLocPick()", cP) === false);
   const rh = (la, ln, r) => { const c3 = mk(); c3.radius = r; return vm.runInContext(`radiusHint({ lat: ${la}, lng: ${ln} })`, c3); };
   check("Radiushinweis: vollständig / nur bis x km / außerhalb", !rh(48.5367, 9.2857, 25).warn && /bis ≈ 25 km/.test(rh(48.5367, 9.2857, 25).txt) && rh(48.5367 + 10 / 111.2, 9.2857, 25).warn && /nur bis ≈ 1\d km/.test(rh(48.5367 + 10 / 111.2, 9.2857, 25).txt) && /außerhalb des Datengebiets/.test(rh(50, 9, 10).txt));
+  const cE = mk(); cE.evMode = true; check("Radiushinweis: im E-Modus kein Hinweis (Ladestationen werden live abgefragt, keine Gebietsgrenze)", vm.runInContext("radiusHint({ lat: 50, lng: 9 })", cE).txt === "");
+  // Tankbuch-Vergleiche nach Wechsel der Regeladresse erst rechnen, wenn die Gebiete geladen sind (sonst „außerhalb“ gespeichert)
+  { let calls = 0, hb = { id: "H" }; const cT = sandbox(["regel.js"], { distKm: dk, bases: [], loc: { mode: "home" }, radius: 10, evMode: false, geoSearch: async () => [], getPosition: async () => ({}), center: () => null, load() {}, homeBase: () => hb, tbRecompute: () => { calls++; return Promise.resolve(0); }, TB_NAME: () => "Spritbüchle", toast() {} }), RT = (c) => vm.runInContext(c, cT);
+    hb = { id: "S" }; RT("homeChanged('H')"); RT("flushTbRecompute()");
+    check("Tankbuch: Neuberechnung wartet, solange keine Gebiete geladen sind", calls === 0, calls);
+    cT.bases = BS; RT("flushTbRecompute()"); RT("flushTbRecompute()");
+    check("Tankbuch: Neuberechnung läuft einmal, sobald die Gebiete da sind", calls === 1, calls);
+    RT("homeChanged('S')"); RT("flushTbRecompute()"); check("Tankbuch: gleiche Region → keine Neuberechnung", calls === 1, calls); }
 }
 done("Unit-Tests");

@@ -44,10 +44,10 @@ function migrateHome() {
 // noch kein Ort gewählt (Erststart, entfernte Regeladresse, Auswahl nach Fenster ohne Wahl) → Ortswahl öffnen
 const needLocPick = () => !homeAddr() && loc.mode === "base" && (!!loc.auto || !bases.some((b) => b.id === loc.baseId));
 let locAsked = false;
-function askLocOnce() { if (locAsked || !needLocPick()) return; locAsked = true; openLocDialog(true); }
+function askLocOnce() { if (locAsked || !needLocPick() || document.querySelector("dialog[open]")) return; locAsked = true; openLocDialog(true); }
 // Hinweis zum Radius: reicht ein Gebiet für den Kreis um diesen Ort?
 function radiusHint(c) {
-  if (!c || !bases.length) return { txt: "", warn: false };
+  if (!c || !bases.length || evMode) return { txt: "", warn: false };   // im E-Modus gibt es keine Gebietsgrenze
   const cov = coverKm(c.lat, c.lng), key = !!store.get("tk", "");
   if (cov < 1) return { warn: true, txt: `Dieser Ort liegt außerhalb des Datengebiets${key ? " – Live-Abfrage mit deinem Tankerkönig-Schlüssel." : "."}` };
   if (radius > cov) return { warn: true, txt: `Vollständige Daten liegen hier nur bis ≈ ${cov} km vor${key ? " – darüber Live-Abfrage." : " – bei größerem Radius fehlen Tankstellen."}` };
@@ -75,6 +75,7 @@ function setLoc(l) {
   renderLocDialog();
 }
 function openLocDialog(first = false) {
+  if ($("#dlgLoc").open) return;
   locChanged = false;
   $("#locHint").hidden = !first;
   renderLocDialog(); $("#searchResults").innerHTML = "";
@@ -131,9 +132,13 @@ $("#inRadius").addEventListener("input", (e) => {
 $("#btnLocDone").addEventListener("click", () => $("#dlgLoc").close());
 $("#dlgLoc").addEventListener("close", () => { if (locChanged) load(); });
 // Die Vergleichsregion im Tankbuch hängt an der Regeladresse: bei einem Wechsel der Region die Vergleiche neu berechnen
-function homeChanged(prevBaseId) {
-  const nb = homeBase()?.id;
-  if (nb && nb !== prevBaseId) tbRecompute(true).then((n) => n && toast(`${TB_NAME()}: ${n} Vergleiche mit der neuen Regeladresse neu berechnet.`));
+// Die Neuberechnung braucht die geladenen Gebiete (die Einstellungen leeren sie beim Speichern): sie läuft deshalb erst in load()
+let tbPending = false;
+function homeChanged(prevBaseId) { const nb = homeBase()?.id; if (nb && nb !== prevBaseId) tbPending = true; }
+function flushTbRecompute() {
+  if (!tbPending || !bases.length) return;
+  tbPending = false;
+  tbRecompute(true).then((n) => n && toast(`${TB_NAME()}: ${n} Vergleiche mit der neuen Regeladresse neu berechnet.`));
 }
 
 // ---- Einstellungen: Regeladresse suchen, aus dem Standort übernehmen, entfernen (gilt erst mit „Speichern“)

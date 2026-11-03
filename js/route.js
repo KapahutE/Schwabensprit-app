@@ -139,7 +139,7 @@ const Route = (() => {
     }
     if (p.kind === "base") {
       const b = bases.find((x) => x.id === p.baseId);
-      if (!b) throw Object.assign(new Error(bases.length ? "Diese Base gibt es nicht mehr." : say("D'Bases hen se grad net lada lassa – nomol probiera.", "Die Bases konnten gerade nicht geladen werden – bitte erneut versuchen.")), { user: true });
+      if (!b) throw Object.assign(new Error(bases.length ? "Dieser gespeicherte Ort ist nicht mehr verfügbar." : say("D'Date hen se grad net lada lassa – nomol probiera.", "Die Daten konnten gerade nicht geladen werden – bitte erneut versuchen.")), { user: true });
       return { lat: b.lat, lng: b.lng };
     }
     return { lat: +p.lat, lng: +p.lng };

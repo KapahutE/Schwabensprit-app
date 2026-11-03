@@ -42,6 +42,7 @@ h1.wordmark{margin:0}
 .locbtn .lp{color:var(--acc-ink);flex:none}
 .locbtn .cv{color:var(--muted);flex:none}
 .locbtn span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.locbtn #locLabel{display:block}.locbtn .lt{display:inline-block;max-width:calc(100% - 4.1em);vertical-align:bottom}.locbtn .lr{display:inline;overflow:visible}
 .stand{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--muted)}
 .stand i{width:8px;height:8px;border-radius:50%;background:var(--mid);flex:none}
 .stand.fresh i{background:var(--ok);animation:pulse 2.2s infinite}
@@ -84,7 +85,7 @@ h1.wordmark{margin:0}
 .pill.plain{background:var(--seg)}.pill.plain i{display:none}
 
 /* Knöpfe */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 16px;border-radius:14px;background:var(--acc);color:var(--on-acc);font-weight:700;text-decoration:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:12px 16px;border-radius:14px;background:var(--acc);color:var(--on-acc);font-weight:700;text-decoration:none}
 .btn svg{width:18px;height:18px}
 .btn.secondary{background:var(--seg);color:var(--fg)}
 .btn.block{width:100%}
@@ -474,7 +475,8 @@ details.vmore{margin:14px 4px 0;font-size:14px}details.vmore summary{font-size:1
 .locbtn{flex:0 1 auto;min-width:0}
 .locline{display:flex;gap:8px;align-items:center;min-width:0;max-width:100%}
 .lvlbtn{display:inline-flex;align-items:center;gap:6px;flex:none;position:relative;padding:7px 12px;border-radius:999px;background:var(--card);box-shadow:var(--shadow);color:var(--muted);font-size:15px;font-weight:650}
-.lvlbtn::after{content:"";position:absolute;left:0;right:0;top:-5px;bottom:-5px}
+.lvlbtn::after,.locbtn::after{content:"";position:absolute;left:0;right:0;top:-5px;bottom:-5px}
+.locbtn{position:relative}
 .lvlbtn.set{color:var(--fg);box-shadow:inset 0 0 0 1.5px var(--acc)}
 .opt .ic.gg{background:var(--seg);color:var(--fg)}
 .gauge{display:block;width:22px;height:11px;border-radius:3px;border:1.5px solid var(--muted);background:linear-gradient(90deg,var(--acc) calc(var(--f)*100%),transparent 0)}
@@ -482,6 +484,7 @@ details.vmore{margin:14px 4px 0;font-size:14px}details.vmore summary{font-size:1
 .rtlevel{margin-top:4px}
 .rtitem .item.closed .d,.list .item.closed .d{color:var(--muted)}
 
-.homenow{display:flex;align-items:center;gap:10px;justify-content:space-between;margin:2px 0 8px}.homenow b{min-width:0;overflow-wrap:anywhere}.homenow .btn{padding:8px 12px;flex:none}
+.homenow{display:flex;align-items:center;gap:10px;justify-content:space-between;margin:2px 0 8px}.homenow b{min-width:0;overflow-wrap:anywhere}.homenow .btn{padding:8px 14px;flex:none}
 #radiusHint{margin:6px 4px 0}#radiusHint.warn{color:var(--fg)}#radiusHint.warn::before{content:"⚠ "}
 #btnSetHome{margin-top:10px}#btnHomeGps{margin-top:8px}
+#dlg summary{padding:13px 0;cursor:pointer}

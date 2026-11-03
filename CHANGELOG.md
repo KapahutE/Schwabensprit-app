@@ -2,6 +2,14 @@
 
 Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) steht in den Einstellungen unter „Anzeige-Diagnose“.
 
+## 03.11.2026 – Prüfung und Korrekturen
+- Spritbüchle: Nach einem Wechsel der Regeladresse werden die Preisvergleiche erst berechnet, wenn die Gebiete geladen sind; vorher konnten Einträge fälschlich „außerhalb des Datengebiets“ erhalten
+- Ortsknopf oben: Der Radius bleibt auch bei langen Ortsnamen sichtbar (nur der Name wird gekürzt); die Sprachausgabe nennt Ort und Radius; größere Tippfläche
+- Tippflächen: alle Schaltflächen mindestens 44 px hoch; Zeilen „Anzeige-Diagnose“, „Quellen und Lizenzen“, „Datenschutz“ in den Einstellungen höher; im Test geprüft
+- Ortswahl: öffnet sich nicht mehr über einem anderen offenen Dialog; im E-Modus entfällt der Radiushinweis (Ladestationen werden live abgefragt)
+- Texte: im Spritbüchle „Regeladresse“ statt „Homebase“ (Auswahl, Glückwunsch, Kopfzeilen des Exports); Fehlermeldungen ohne „Bases“
+- Dokumentation: Prüfungszahlen und Stand
+
 ## 30.10.2026 – Regeladresse und Ortswahl
 - Überlegungen zur Kommerzialisierung: `docs/KOMMERZIALISIERUNG.md` (Datenzugang, Einnahmen und Ausgaben mit Modellrechnung, Recht, Technik, Finanzierung, Fahrplan mit Prüfpunkten)
 - Einstellungen: **Regeladresse** (Adresse suchen oder „Standort übernehmen“), nur auf dem Gerät gespeichert; sie gilt beim Start der App, für den Tankbuch-Vergleich und als Start in der Route. „Meine Homebase“ entfällt
