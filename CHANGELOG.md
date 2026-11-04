@@ -3,6 +3,7 @@
 Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) steht in den Einstellungen unter „Anzeige-Diagnose“.
 
 ## 04.11.2026 – Neue Versionen kommen von selbst an
+- Dokumentation: `docs/SERVER.md` (Empfehlung für einen eigenen Server zum Preisabruf: Größe, Anbieter, Schutz, Betrieb, Kosten, Messwerte)
 - Die installierte App zeigte beim Öffnen zuerst die alte Version aus dem Speicher und blendete nur den Balken „Neue Version bereit – tippen zum Neuladen“ ein; wer ihn nicht antippte, blieb bei der alten Version (und ohne neue Korrekturen, z. B. den automatischen Abruf). Jetzt lädt sich die App beim Öffnen selbst neu, wenn sie gerade erst geöffnet wurde und noch nichts angetippt ist (kurzer Hinweis, höchstens einmal je 10 Minuten, nicht bei offenem Dialog, Eingabefeld oder laufendem Abruf); sonst bleibt der Balken
 - Beim Zurückkehren aus dem Hintergrund (nach mehr als 15 Minuten) prüft die App, ob es eine neue Version gibt, und verfährt ebenso (die installierte App wird oft nur fortgesetzt, nicht neu gestartet)
 - Geprüft mit dem echten Service Worker: alte Version erscheint sofort, nach etwa 1 Sekunde läuft die neue
