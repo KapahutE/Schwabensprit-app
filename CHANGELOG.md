@@ -4,7 +4,7 @@ Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) 
 
 ## 04.11.2026 – Automatischer Abruf
 - Ursache der Lücken im Preisstand: GitHub startet den geplanten Abruf nur noch unregelmäßig (von 87 Läufen am Tag am 10.10. auf 27 bis 28 am 2. und 3.11.; in der Nacht zum 4.11. 6,4 Stunden ohne Abruf, alle Läufe selbst waren erfolgreich)
-- Ist der Preisstand beim Öffnen der App älter als 75 Minuten, startet die App den Abruf selbst, sagt es kurz an („Die Daten werden neu abgefragt – in 1–2 Minuten sind die Preise aktuell“) und lädt die frischen Preise danach von selbst; läuft schon ein Abruf, wird nur darauf gewartet; je Gerät höchstens alle 10 Minuten; Fehler dabei still (Statusmeldung bleibt)
+- Ist der Preisstand beim Öffnen der App älter als 30 Minuten, startet die App den Abruf selbst, sagt es kurz an („Die Daten werden neu abgefragt – in 1–2 Minuten sind die Preise aktuell“) und lädt die frischen Preise danach von selbst; läuft schon ein Abruf, wird nur darauf gewartet; je Gerät höchstens alle 10 Minuten; Fehler dabei still (Statusmeldung bleibt)
 
 ## 03.11.2026 – Prüfung und Korrekturen
 - Spritbüchle: Nach einem Wechsel der Regeladresse werden die Preisvergleiche erst berechnet, wenn die Gebiete geladen sind; vorher konnten Einträge fälschlich „außerhalb des Datengebiets“ erhalten

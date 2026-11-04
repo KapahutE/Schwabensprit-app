@@ -388,17 +388,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     check("Hinweis: 75 Min. alt (GitHub startet nur etwa alle 30 Min., Lücken bis fast 1 Std. kommen vor) ist noch normal", h5 === "", h5);
     await p6.close(); state.updMin = 5;
 
-    // ---- Automatischer Abruf: Ist der Stand älter als 75 Min., startet die App den Abruf selbst und sagt es kurz an
+    // ---- Automatischer Abruf: Ist der Stand älter als 30 Min., startet die App den Abruf selbst und sagt es kurz an
     const toasts = (pg) => pg.evaluate(() => window.__toasts || []);
     const seen = (pg, re) => pg.waitForFunction((src) => (window.__toasts || []).some((t) => new RegExp(src).test(t)), re.source, { timeout: 30000 }).then(() => true, () => false);
     const clearAuto = () => p.evaluate(() => localStorage.removeItem("autoAt"));
-    state.disp = 0; state.updMin = 5; await clearAuto();
+    state.disp = 0; state.updMin = 25; await clearAuto();
     const pa = await open3(async () => {}); await pa.waitForTimeout(900);
-    check("Automatischer Abruf: frischer Stand (5 Min.) → kein Abruf, kein Hinweis", state.disp === 0 && !(await toasts(pa)).some((t) => /neu abgf|neu abgef/.test(t)), { disp: state.disp, t: await toasts(pa) });
+    check("Automatischer Abruf: Stand 25 Min. alt (unter der Grenze von 30) → kein Abruf, kein Hinweis", state.disp === 0 && !(await toasts(pa)).some((t) => /neu abgf|neu abgef/.test(t)), { disp: state.disp, t: await toasts(pa) });
     await pa.close();
-    state.updMin = 80; await clearAuto();
+    state.updMin = 35; await clearAuto();
     const pb = await open3(async () => {}); const sb = await seen(pb, /neu abgf|neu abgef/), spin = await pb.evaluate(() => document.querySelector("#btnFetch svg").classList.contains("spin"));
-    check("Automatischer Abruf: Stand 80 Min. alt → Abruf wird einmal gestartet, kurzer Hinweis „neu abgefragt“, ↻ dreht sich", state.disp === 1 && sb && spin, { disp: state.disp, sb, spin, t: await toasts(pb) });
+    check("Automatischer Abruf: Stand 35 Min. alt (über der Grenze von 30) → Abruf wird einmal gestartet, kurzer Hinweis „neu abgefragt“, ↻ dreht sich", state.disp === 1 && sb && spin, { disp: state.disp, sb, spin, t: await toasts(pb) });
     await pb.reload(); await pb.waitForSelector("#main .hero .price", T); await pb.waitForTimeout(900);
     check("Automatischer Abruf: erneutes Öffnen innerhalb von 10 Minuten startet keinen zweiten Abruf", state.disp === 1, state.disp);
     await pb.close();

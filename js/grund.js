@@ -960,7 +960,7 @@ async function dispatch(aktion, opt = {}) {
 // ---- Automatischer Abruf: GitHub startet den geplanten Abruf nur unregelmäßig (nachts oft stundenlang gar nicht).
 // Ist der Preisstand beim Öffnen der App älter als AUTO_STALE_MIN, startet die App den Abruf selbst und sagt es kurz an;
 // ein schon laufender Abruf wird nicht doppelt gestartet. Je Gerät höchstens alle AUTO_PAUSE_MIN Minuten.
-const AUTO_STALE_MIN = 75, AUTO_PAUSE_MIN = 10;
+const AUTO_STALE_MIN = 30, AUTO_PAUSE_MIN = 10;
 let autoBusy = false;
 async function autoRefresh() {
   if (autoBusy || !token() || !repo() || !navigator.onLine) return;
