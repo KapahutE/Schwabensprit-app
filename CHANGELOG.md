@@ -2,6 +2,11 @@
 
 Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) steht in den Einstellungen unter „Anzeige-Diagnose“.
 
+## 04.11.2026 – Abruf: Fehler im Ablauf behoben
+- Fehler im Daten-Repository: Ein wegen `concurrency` wartender Lauf startete mit dem Stand von seiner Erstellung statt mit dem neuesten `main`; der Lauf davor hatte inzwischen Daten gespeichert, das Speichern scheiterte mit Konflikten (Lauf vom 4.11., 13:42 UTC). Jetzt `checkout` mit `ref: main` (neuester Stand, dadurch erkennt der Lauf auch den Abstand zum letzten Abruf und überspringt doppelte Abrufe); ein abgebrochenes Rebase wird zurückgesetzt. Geprüft mit zwei Läufen im Abstand von 12 Sekunden: der erste ruft ab, der zweite überspringt sauber
+- Knopf ↻ und automatischer Abruf: mehrfaches Tippen oder ein schon laufender Abruf (auch von einem anderen Gerät) startet keinen weiteren Lauf; stattdessen „Der Abruf läuft bereits“ (am 4.11. waren es 5 Starts in 2,5 Minuten)
+- Weiter ungelöst: GitHub startet den geplanten Abruf kaum noch (am 4.11. nur 2 geplante Läufe bis 13:40 UTC, dazu eine GitHub-Störung von 09:49 bis 11:50 UTC); dauerhafte Abhilfe ist ein externer Zeitgeber oder ein eigener Server
+
 ## 04.11.2026 – Automatischer Abruf
 - Ursache der Lücken im Preisstand: GitHub startet den geplanten Abruf nur noch unregelmäßig (von 87 Läufen am Tag am 10.10. auf 27 bis 28 am 2. und 3.11.; in der Nacht zum 4.11. 6,4 Stunden ohne Abruf, alle Läufe selbst waren erfolgreich)
 - Ist der Preisstand beim Öffnen der App älter als 30 Minuten, startet die App den Abruf selbst, sagt es kurz an („Die Daten werden neu abgefragt – in 1–2 Minuten sind die Preise aktuell“) und lädt die frischen Preise danach von selbst; läuft schon ein Abruf, wird nur darauf gewartet; je Gerät höchstens alle 10 Minuten; Fehler dabei still (Statusmeldung bleibt)

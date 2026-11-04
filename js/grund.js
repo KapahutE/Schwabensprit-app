@@ -922,11 +922,17 @@ document.addEventListener("click", (e) => {
 });
 
 // ---- Abruf bei GitHub starten (Knopf ↻)
+const runActive = (r) => !!r && ["queued", "waiting", "pending", "requested", "in_progress"].includes(r.status) && minsAgo(r.created_at) < 15;
+let dispatching = false;
 async function dispatch(aktion, opt = {}) {
   if (view?.live) { toast("Live-Preise werden aktualisiert …"); return load(true); }
   if (!repo() || !token()) { if (!opt.auto) openSettings(); return; }
+  // mehrfaches Tippen (oder ein zweites Gerät) darf keine weiteren Läufe starten: sie würden nur warten, überholen sich oder scheitern
+  if (dispatching) { if (!opt.auto) toast(say("Dr Abruf läuft scho – no a Momentle.", "Der Abruf läuft bereits – einen Moment."), 3000); return; }
+  dispatching = true;
   const btn = $("#btnFetch svg"); btn.classList.add("spin");
   try {
+    if (aktion === "abrufen" && opt.running == null) opt = { ...opt, running: runActive((await lastRun(repo(), "tankpreise.yml", token()).catch(() => null))?.[0]) };
     if (!opt.running) {   // läuft schon ein Abruf (auch von einem anderen Gerät), wird nur auf dessen Ergebnis gewartet
       const r = await fetch(`https://api.github.com/repos/${repo()}/actions/workflows/tankpreise.yml/dispatches`, {
         method: "POST",
@@ -939,8 +945,8 @@ async function dispatch(aktion, opt = {}) {
         404: "Repository nicht gefunden – ist es beim Schlüssel unter „Repository access“ ausgewählt?",
       }[r.status] || `GitHub-Fehler ${r.status}`);
     }
-    if (opt.auto) toast(opt.running ? say("Dia Preis werret grad neu abgfrogt – gli send se do.", "Die Daten werden gerade neu abgefragt – gleich sind die Preise aktuell.")
-      : say("Dia Preis werret neu abgfrogt – in 1–2 Minuta send se frisch.", "Die Daten werden neu abgefragt – in 1–2 Minuten sind die Preise aktuell."), 5000);
+    if (opt.running) toast(say("Dia Preis werret grad neu abgfrogt – gli send se do.", "Die Daten werden gerade neu abgefragt – gleich sind die Preise aktuell."), 5000);
+    else if (opt.auto) toast(say("Dia Preis werret neu abgfrogt – in 1–2 Minuta send se frisch.", "Die Daten werden neu abgefragt – in 1–2 Minuten sind die Preise aktuell."), 5000);
     else toast(aktion === "report" ? say("Dr Wochenreport wird gmacht – dauert a Minütle oder zwoi.", "Wochenreport wird erstellt – dauert ca. 1–2 Minuten.")
       : say("Abruf läuft – in 1–2 Minuta gibt's frische Preis.", "Abruf gestartet – neue Preise in ca. 1–2 Minuten."), 0);
     const before = JSON.stringify(bases.map((b) => b.updated));
@@ -954,7 +960,7 @@ async function dispatch(aktion, opt = {}) {
     if (!opt.auto) toast(say("Des dauert länger als denkt – nochher nomol neu lada.", "Dauert länger als erwartet – später neu laden."), 5000);
   } catch (e) {
     if (!opt.auto) toast("Fehler: " + e.message, 6000);   // beim automatischen Abruf kein Fehlerhinweis bei jedem Öffnen (die Statusmeldung oben sagt, was los ist)
-  } finally { btn.classList.remove("spin"); }
+  } finally { btn.classList.remove("spin"); dispatching = false; }
 }
 
 // ---- Automatischer Abruf: GitHub startet den geplanten Abruf nur unregelmäßig (nachts oft stundenlang gar nicht).
@@ -969,9 +975,7 @@ async function autoRefresh() {
   if (Date.now() - Number(store.get("autoAt", "0")) < AUTO_PAUSE_MIN * 60000) return;
   autoBusy = true; store.set("autoAt", String(Date.now()));
   try {
-    const r0 = (await lastRun(repo(), "tankpreise.yml", token()).catch(() => null))?.[0];
-    const running = !!r0 && ["queued", "waiting", "pending", "requested", "in_progress"].includes(r0.status) && minsAgo(r0.created_at) < 15;
-    await dispatch("abrufen", { auto: true, running });
+    await dispatch("abrufen", { auto: true });   // prüft selbst, ob schon ein Abruf läuft
   } finally { autoBusy = false; }
 }
 

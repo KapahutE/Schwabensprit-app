@@ -412,6 +412,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const after = await pd.innerText("#stand"), hd = await health(pd);
     check("Automatischer Abruf: nach dem Abruf lädt die App die frischen Preise von selbst („Aktualisiert ✓“), Stand und Hinweis passen", state.disp === 1 && done && before !== after && hd === "", { before, after, hd, disp: state.disp, t: await toasts(pd) });
     await pd.close(); state.bumpOnDispatch = false; state.bump = false; state.updMin = 5;
+    // Knopf ↻: mehrfaches Tippen oder ein schon laufender Abruf startet keinen weiteren Lauf
+    state.disp = 0; state.updMin = 5; state.runs = [];
+    const pe = await open3(async () => {}); await pe.waitForTimeout(600);
+    await pe.click("#btnFetch"); await pe.click("#btnFetch"); await pe.click("#btnFetch"); await pe.waitForTimeout(1200);
+    check("Knopf ↻: dreimal getippt startet genau einen Abruf, der Hinweis sagt „läuft bereits“", state.disp === 1 && (await toasts(pe)).some((t) => /läuft scho|läuft bereits/.test(t)), { disp: state.disp, t: await toasts(pe) });
+    await pe.close();
+    state.runs = [{ status: "queued", conclusion: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }]; state.disp = 0;
+    const pf = await open3(async () => {}); await pf.waitForTimeout(600); await pf.click("#btnFetch"); await pf.waitForTimeout(1200);
+    check("Knopf ↻: läuft schon ein Abruf (anderes Gerät), startet die App keinen zweiten", state.disp === 0 && (await toasts(pf)).some((t) => /(gerade|grad) neu abgf|gerade neu abgef/.test(t)), { disp: state.disp, t: await toasts(pf) });
+    await pf.close(); state.runs = [];
     // ---- Leiste unten und Sortenwahl: ohne Weichzeichner; Korrektur bei versetztem Anzeigebereich (nur iPhone, installierte App)
     const css = await p.evaluate(() => { const g = (q) => { const e = document.querySelector(q); return e ? getComputedStyle(e) : null; }; return { bar: g("#tabbar")?.backdropFilter, sticky: g(".sticky")?.backdropFilter, will: g("#tabbar")?.willChange }; });
     check("Anzeige: Leiste unten und Sortenwahl ohne Weichzeichner, Leiste mit eigener Ebene (iOS löst sie sonst beim Scrollen)", css.bar === "none" && css.sticky === "none" && /transform/.test(css.will), css);
