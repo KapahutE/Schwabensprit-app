@@ -2,6 +2,11 @@
 
 Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) steht in den Einstellungen unter „Anzeige-Diagnose“.
 
+## 04.11.2026 – Neue Versionen kommen von selbst an
+- Die installierte App zeigte beim Öffnen zuerst die alte Version aus dem Speicher und blendete nur den Balken „Neue Version bereit – tippen zum Neuladen“ ein; wer ihn nicht antippte, blieb bei der alten Version (und ohne neue Korrekturen, z. B. den automatischen Abruf). Jetzt lädt sich die App beim Öffnen selbst neu, wenn sie gerade erst geöffnet wurde und noch nichts angetippt ist (kurzer Hinweis, höchstens einmal je 10 Minuten, nicht bei offenem Dialog, Eingabefeld oder laufendem Abruf); sonst bleibt der Balken
+- Beim Zurückkehren aus dem Hintergrund (nach mehr als 15 Minuten) prüft die App, ob es eine neue Version gibt, und verfährt ebenso (die installierte App wird oft nur fortgesetzt, nicht neu gestartet)
+- Geprüft mit dem echten Service Worker: alte Version erscheint sofort, nach etwa 1 Sekunde läuft die neue
+
 ## 04.11.2026 – Abruf: Fehler im Ablauf behoben
 - Fehler im Daten-Repository: Ein wegen `concurrency` wartender Lauf startete mit dem Stand von seiner Erstellung statt mit dem neuesten `main`; der Lauf davor hatte inzwischen Daten gespeichert, das Speichern scheiterte mit Konflikten (Lauf vom 4.11., 13:42 UTC). Jetzt `checkout` mit `ref: main` (neuester Stand, dadurch erkennt der Lauf auch den Abstand zum letzten Abruf und überspringt doppelte Abrufe); ein abgebrochenes Rebase wird zurückgesetzt. Geprüft mit zwei Läufen im Abstand von 12 Sekunden: der erste ruft ab, der zweite überspringt sauber
 - Knopf ↻ und automatischer Abruf: mehrfaches Tippen oder ein schon laufender Abruf (auch von einem anderen Gerät) startet keinen weiteren Lauf; stattdessen „Der Abruf läuft bereits“ (am 4.11. waren es 5 Starts in 2,5 Minuten)

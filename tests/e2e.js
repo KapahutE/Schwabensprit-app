@@ -390,6 +390,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
     // ---- Automatischer Abruf: Ist der Stand älter als 30 Min., startet die App den Abruf selbst und sagt es kurz an
     const toasts = (pg) => pg.evaluate(() => window.__toasts || []);
+    const tx2 = async (pg, sel) => { const e = await pg.$(sel); return e ? (await e.innerText()).replace(/\s+/g, " ").trim() : ""; };
     const seen = (pg, re) => pg.waitForFunction((src) => (window.__toasts || []).some((t) => new RegExp(src).test(t)), re.source, { timeout: 30000 }).then(() => true, () => false);
     const clearAuto = () => p.evaluate(() => localStorage.removeItem("autoAt"));
     state.disp = 0; state.updMin = 25; await clearAuto();
@@ -422,6 +423,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const pf = await open3(async () => {}); await pf.waitForTimeout(600); await pf.click("#btnFetch"); await pf.waitForTimeout(1200);
     check("Knopf ↻: läuft schon ein Abruf (anderes Gerät), startet die App keinen zweiten", state.disp === 0 && (await toasts(pf)).some((t) => /(gerade|grad) neu abgf|gerade neu abgef/.test(t)), { disp: state.disp, t: await toasts(pf) });
     await pf.close(); state.runs = [];
+
+    // ---- Neue Version: Beim Öffnen lädt sich die App selbst neu; später (nach Tippen) oder kurz nach einem Neuladen erscheint nur der Balken
+    const upd = (pg) => pg.evaluate(() => navigator.serviceWorker.dispatchEvent(new MessageEvent("message", { data: { type: "update" } })));
+    const pu = await open3(async () => {}); await pu.evaluate(() => { window.__m = 1; });
+    const navU = pu.waitForNavigation({ timeout: 10000 }).then(() => true, () => false);
+    await upd(pu); const tu = await toasts(pu); const reloaded = await navU; await pu.waitForSelector("#main .hero .price", T);
+    check("Neue Version: gerade geöffnet und nichts angetippt → die App lädt sich mit Hinweis selbst neu, ohne Balken", reloaded && tu.some((t) => /lädt neu/.test(t)) && (await pu.evaluate(() => window.__m)) === undefined && (await pu.$("#updBar")) === null, { reloaded, tu });
+    await upd(pu); await pu.waitForTimeout(1500);
+    check("Neue Version: gleich danach noch eine Meldung → kein zweites automatisches Neuladen (Schutz vor Dauerschleife), stattdessen Balken", (await pu.$("#updBar")) !== null, await pu.evaluate(() => sessionStorage.getItem("updAt")));
+    await pu.close();
+    const pv = await open3(async () => {}); await pv.evaluate(() => { window.__m = 1; }); await pv.mouse.click(2, 2);
+    await upd(pv); await pv.waitForTimeout(1800);
+    check("Neue Version: nach dem ersten Antippen kein automatisches Neuladen, nur der Balken „Neue Version bereit“", (await pv.evaluate(() => window.__m)) === 1 && /Neue Version bereit/.test(await tx2(pv, "#updBar")), await tx2(pv, "#updBar"));
+    await pv.close();
     // ---- Leiste unten und Sortenwahl: ohne Weichzeichner; Korrektur bei versetztem Anzeigebereich (nur iPhone, installierte App)
     const css = await p.evaluate(() => { const g = (q) => { const e = document.querySelector(q); return e ? getComputedStyle(e) : null; }; return { bar: g("#tabbar")?.backdropFilter, sticky: g(".sticky")?.backdropFilter, will: g("#tabbar")?.willChange }; });
     check("Anzeige: Leiste unten und Sortenwahl ohne Weichzeichner, Leiste mit eigener Ebene (iOS löst sie sonst beim Scrollen)", css.bar === "none" && css.sticky === "none" && /transform/.test(css.will), css);

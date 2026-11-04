@@ -1112,13 +1112,35 @@ document.addEventListener("DOMContentLoaded", () => load(true));
 
 
 // ---- Service Worker (Sofortstart, Betrieb ohne Netz) und Hinweis auf neue Versionen
+// Neue Version: Wird die App gerade erst geöffnet und wurde noch nichts angetippt, lädt sie sich selbst neu (sonst bliebe die alte
+// Version mit ihren Fehlern auf dem Gerät, bis jemand den Balken antippt). Sonst erscheint der Balken wie bisher.
+// Sperren: höchstens ein automatisches Neuladen je 10 Minuten (kein Dauerschleife), nicht bei offenem Dialog, Eingabefeld oder laufendem Abruf.
+let openedAt = Date.now(), touched = false, lastVerCheck = Date.now();
+for (const ev of ["pointerdown", "touchstart", "keydown", "wheel"]) window.addEventListener(ev, () => { touched = true; }, { capture: true, passive: true });
+const canAutoUpdate = () => {
+  if (touched || document.hidden || Date.now() - openedAt > 15000 || dispatching) return false;
+  if (document.querySelector("dialog[open]") || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "")) return false;
+  try { return Date.now() - Number(sessionStorage.getItem("updAt") || 0) > 10 * 60000; } catch { return false; }
+};
+function offerUpdate() {
+  if ($("#updBar")) return;
+  if (canAutoUpdate()) {
+    try { sessionStorage.setItem("updAt", String(Date.now())); } catch {}
+    toast(say("Neue Version – d'App lädt neu …", "Neue Version – die App lädt neu …"), 0);
+    return void setTimeout(() => location.reload(), 900);
+  }
+  const b = Object.assign(document.createElement("button"), { id: "updBar", type: "button", textContent: "Neue Version bereit – tippen zum Neuladen" });
+  b.addEventListener("click", () => location.reload());
+  document.body.append(b);
+}
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
-  navigator.serviceWorker.addEventListener("message", (e) => {
-    if (e.data?.type !== "update" || $("#updBar")) return;
-    const b = Object.assign(document.createElement("button"), { id: "updBar", type: "button", textContent: "Neue Version bereit – tippen zum Neuladen" });
-    b.addEventListener("click", () => location.reload());
-    document.body.append(b);
+  navigator.serviceWorker.addEventListener("message", (e) => { if (e.data?.type === "update") offerUpdate(); });
+  // Aus dem Hintergrund zurück (installierte App wird oft nur fortgesetzt, nicht neu gestartet): wie ein Neustart prüfen, ob es eine neue Version gibt
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    openedAt = Date.now(); touched = false;
+    if (Date.now() - lastVerCheck > 15 * 60000) { lastVerCheck = Date.now(); fetch("index.html", { cache: "no-cache" }).catch(() => {}); }   // der Worker vergleicht dabei mit dem Netz und meldet Neues
   });
 }
 
