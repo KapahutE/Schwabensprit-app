@@ -179,7 +179,7 @@ Reihenfolge nach Zeitpunkt: **vor einem öffentlichen Angebot**, **vor der erste
 
 ## 8. Technische Maßnahmen und Notwendigkeiten
 
-**Ist-Stand:** Statische App (GitHub Pages), Datenaufbereitung in GitHub Actions (Cron, Git als Ablage), Zugriff mit persönlichem GitHub-Schlüssel (Tankerkönig-Schlüssel nur als Secret), keine Konten, kein Server, 101 Unit- und 95 Browser-Prüfungen, axe ohne Befund, ESLint, Versionsprüfung, CSP, Dependabot. **Das ist für den Privatgebrauch richtig und für ein kommerzielles Angebot nicht ausreichend.**
+**Ist-Stand:** Statische App (GitHub Pages), Datenaufbereitung in GitHub Actions (Cron, Git als Ablage), Zugriff mit persönlichem GitHub-Schlüssel (Tankerkönig-Schlüssel nur als Secret), keine Konten, kein Server, 101 Unit- und 100 Browser-Prüfungen, axe ohne Befund, ESLint, Versionsprüfung, CSP, Dependabot. **Das ist für den Privatgebrauch richtig und für ein kommerzielles Angebot nicht ausreichend.**
 
 | Arbeitspaket | Inhalt | Aufwand (Annahme) |
 |---|---|---|

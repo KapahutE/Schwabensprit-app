@@ -12,15 +12,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const DEVICE = process.env.DEVICE || "iPhone 13", ANDROID = /Android/.test(devices[DEVICE].userAgent);
   const ctx = await browser.newContext({ ...devices[DEVICE], timezoneId: "Europe/Berlin", locale: "de-DE", serviceWorkers: "allow" });
   const bases = fixture("bases.json"), latest = fixture("latest-H.json"), EVL = fixture("ev-locations.json"), EVT = fixture("ev-tariffs.json"), OSRM = JSON.stringify(fixture("route-stgt-ulm.json"));
-  const state = { offline: false, loc: 0, csp: [], updMin: 5, delay: 0, fail: false };
+  const state = { offline: false, loc: 0, csp: [], updMin: 5, delay: 0, fail: false, disp: 0, bumpOnDispatch: false, bump: false, runs: [] };
   const stamp = (min) => new Date(Date.now() - min * 60000).toLocaleString("sv-SE", { timeZone: "Europe/Berlin" }).replace(" ", "T");   // wie „updated“ in den Daten (Berliner Zeit)
-  const H = { "access-control-allow-origin": "*" }, J = { ...H, "content-type": "application/json" };
+  const H = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "*" }, J = { ...H, "content-type": "application/json" };
   await ctx.route(/api\.github\.com/, async (r) => {
     if (state.offline) return r.abort("internetdisconnected");
     const u = r.request().url(), m = u.match(/contents\/docs\/(.*?)\?/);
-    if (!m) return r.fulfill({ status: 200, headers: J, body: JSON.stringify({ workflow_runs: [] }) });
+    if (r.request().method() === "POST" && /\/dispatches$/.test(u)) { state.disp++; if (state.bumpOnDispatch) state.bump = true; return r.fulfill({ status: 204, headers: H, body: "" }); }   // Abruf starten (Zähler für die Tests)
+    if (!m) return r.fulfill({ status: 200, headers: J, body: JSON.stringify({ workflow_runs: state.runs }) });
     if (m[1] === "data/H/latest.json") { if (state.fail) return r.fulfill({ status: 500, headers: H, body: "{}" }); if (state.delay) await sleep(state.delay); }
-    const f = { "data/bases.json": bases, "data/H/latest.json": { ...latest, updated: stamp(state.updMin) }, "data/H/reports.json": [] }[m[1]];
+    const f = { "data/bases.json": state.bump ? bases.map((b) => ({ ...b, updated: stamp(1) })) : bases, "data/H/latest.json": { ...latest, updated: stamp(state.bump ? 1 : state.updMin) }, "data/H/reports.json": [] }[m[1]];
     f ? r.fulfill({ status: 200, headers: J, body: JSON.stringify(f) }) : r.fulfill({ status: 404, headers: H, body: "{}" });
   });
   await ctx.route(/api\.mobidata-bw\.de/, (r) => {
@@ -41,6 +42,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await ctx.route(/routing\.openstreetmap\.de/, (r) => r.request().url().includes("/table/") ? r.fulfill({ status: 500, body: "" }) : r.fulfill({ status: 200, headers: J, body: OSRM }));
   await ctx.route(/google\.com\/s2|tile\.openstreetmap|e-control|tankerkoenig|nominatim|valhalla/, (r) => r.fulfill({ status: 404, body: "" }));
   if (process.env.LEAFLET_DIR) await ctx.route(/unpkg\.com\/leaflet@1\.9\.4\/dist\/(.*)/, (r) => r.fulfill({ path: path.join(process.env.LEAFLET_DIR, r.request().url().split("/dist/")[1].split("?")[0]) }));
+  await ctx.addInitScript(() => {   // alle Hinweise („Toast“) mitschreiben, damit Tests sie auch nach dem Ausblenden prüfen können
+    document.addEventListener("DOMContentLoaded", () => { const t = document.querySelector("#toast"); if (t) new MutationObserver(() => { if (t.textContent) (window.__toasts ||= []).push(t.textContent); }).observe(t, { childList: true, characterData: true, subtree: true }); });
+  });
   await ctx.addInitScript(() => {
     try { if (sessionStorage.getItem("i")) return; sessionStorage.setItem("i", 1); } catch { return; }   // im abgeschotteten Berichtsrahmen gibt es keinen Speicher
     localStorage.setItem("token", "test-token"); localStorage.setItem("repo", "test/tankpreise"); localStorage.setItem("dataMode", "api");
@@ -383,6 +387,31 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     state.updMin = 75; const p6 = await open3(async () => {}); await p6.waitForTimeout(600); const h5 = await health(p6);
     check("Hinweis: 75 Min. alt (GitHub startet nur etwa alle 30 Min., Lücken bis fast 1 Std. kommen vor) ist noch normal", h5 === "", h5);
     await p6.close(); state.updMin = 5;
+
+    // ---- Automatischer Abruf: Ist der Stand älter als 75 Min., startet die App den Abruf selbst und sagt es kurz an
+    const toasts = (pg) => pg.evaluate(() => window.__toasts || []);
+    const seen = (pg, re) => pg.waitForFunction((src) => (window.__toasts || []).some((t) => new RegExp(src).test(t)), re.source, { timeout: 30000 }).then(() => true, () => false);
+    const clearAuto = () => p.evaluate(() => localStorage.removeItem("autoAt"));
+    state.disp = 0; state.updMin = 5; await clearAuto();
+    const pa = await open3(async () => {}); await pa.waitForTimeout(900);
+    check("Automatischer Abruf: frischer Stand (5 Min.) → kein Abruf, kein Hinweis", state.disp === 0 && !(await toasts(pa)).some((t) => /neu abgf|neu abgef/.test(t)), { disp: state.disp, t: await toasts(pa) });
+    await pa.close();
+    state.updMin = 80; await clearAuto();
+    const pb = await open3(async () => {}); const sb = await seen(pb, /neu abgf|neu abgef/), spin = await pb.evaluate(() => document.querySelector("#btnFetch svg").classList.contains("spin"));
+    check("Automatischer Abruf: Stand 80 Min. alt → Abruf wird einmal gestartet, kurzer Hinweis „neu abgefragt“, ↻ dreht sich", state.disp === 1 && sb && spin, { disp: state.disp, sb, spin, t: await toasts(pb) });
+    await pb.reload(); await pb.waitForSelector("#main .hero .price", T); await pb.waitForTimeout(900);
+    check("Automatischer Abruf: erneutes Öffnen innerhalb von 10 Minuten startet keinen zweiten Abruf", state.disp === 1, state.disp);
+    await pb.close();
+    state.runs = [{ status: "in_progress", conclusion: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }]; state.disp = 0; await clearAuto();
+    const pc = await open3(async () => {}); const sc = await seen(pc, /(gerade|grad) neu abgf|gerade neu abgef/);
+    check("Automatischer Abruf: läuft schon ein Abruf (anderes Gerät) → kein zweiter Start, Hinweis „gerade neu abgefragt“", state.disp === 0 && sc, { disp: state.disp, t: await toasts(pc) });
+    await pc.close(); state.runs = [];
+    state.disp = 0; state.bumpOnDispatch = true; await clearAuto();
+    const pd = await open3(async () => {}); const before = await pd.innerText("#stand");
+    const done = await seen(pd, /frische Preis sind do|Aktualisiert/); await pd.waitForTimeout(500);
+    const after = await pd.innerText("#stand"), hd = await health(pd);
+    check("Automatischer Abruf: nach dem Abruf lädt die App die frischen Preise von selbst („Aktualisiert ✓“), Stand und Hinweis passen", state.disp === 1 && done && before !== after && hd === "", { before, after, hd, disp: state.disp, t: await toasts(pd) });
+    await pd.close(); state.bumpOnDispatch = false; state.bump = false; state.updMin = 5;
     // ---- Leiste unten und Sortenwahl: ohne Weichzeichner; Korrektur bei versetztem Anzeigebereich (nur iPhone, installierte App)
     const css = await p.evaluate(() => { const g = (q) => { const e = document.querySelector(q); return e ? getComputedStyle(e) : null; }; return { bar: g("#tabbar")?.backdropFilter, sticky: g(".sticky")?.backdropFilter, will: g("#tabbar")?.willChange }; });
     check("Anzeige: Leiste unten und Sortenwahl ohne Weichzeichner, Leiste mit eigener Ebene (iOS löst sie sonst beim Scrollen)", css.bar === "none" && css.sticky === "none" && /transform/.test(css.will), css);

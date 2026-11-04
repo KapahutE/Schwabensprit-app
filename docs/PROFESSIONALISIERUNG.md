@@ -7,7 +7,7 @@ Stand: 20.10.2026. Ziel: die App von einem persönlichen Werkzeug zu etwas mache
 | Bereich | Stand |
 |---|---|
 | Funktion | Preise, Karte, Verlauf, Prognose, „Wann tanken?“, Route (D, A), E-Modus, Spritbüchle mit Belegleser; iPhone und Android; Betrieb ohne Netz |
-| Tests | 101 Unit-Prüfungen, 95 (iPhone) bzw. 96 (Android) Browser-Prüfungen, bei jedem Push in GitHub Actions |
+| Tests | 101 Unit-Prüfungen, 100 (iPhone) bzw. 101 (Android) Browser-Prüfungen, bei jedem Push in GitHub Actions |
 | Code-Qualität | ESLint ohne Befund (5.000 Zeilen, kein undefinierter Name); Versionsnummer, Skript-Liste, Sicherheitsrichtlinie und Veröffentlichungsordner werden geprüft |
 | Barrierefreiheit | axe-core (WCAG 2.1 AA) ohne Verstöße in allen Hauptansichten, hell und dunkel; **noch nicht** mit Screenreader auf echten Geräten geprüft |
 | Veröffentlichung | nur App-Dateien auf GitHub Pages (`tools/publish.js`), Änderungsprotokoll (`CHANGELOG.md`), Dependabot, Vorlage für Fehlermeldungen |

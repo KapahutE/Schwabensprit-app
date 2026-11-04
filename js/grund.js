@@ -353,6 +353,7 @@ async function load(force = false, liveForce = force) {
   if (view.stations) preloadLogos(view.stations);
   if (view.base && !view.error) loadHistory().then(() => { renderAnalysis(); if (detailId) renderDetail(); });
   if (askPick) askLocOnce();   // noch kein Ort gewählt: Ortswahl öffnen
+  autoRefresh();   // Stand zu alt: Abruf bei GitHub selbst starten
 }
 
 const byId = (id) => view?.stations?.find((s) => s.id === id);
@@ -921,22 +922,26 @@ document.addEventListener("click", (e) => {
 });
 
 // ---- Abruf bei GitHub starten (Knopf ↻)
-async function dispatch(aktion) {
+async function dispatch(aktion, opt = {}) {
   if (view?.live) { toast("Live-Preise werden aktualisiert …"); return load(true); }
-  if (!repo() || !token()) { openSettings(); return; }
+  if (!repo() || !token()) { if (!opt.auto) openSettings(); return; }
   const btn = $("#btnFetch svg"); btn.classList.add("spin");
   try {
-    const r = await fetch(`https://api.github.com/repos/${repo()}/actions/workflows/tankpreise.yml/dispatches`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token()}`, Accept: "application/vnd.github+json" },
-      body: JSON.stringify({ ref: "main", inputs: { aktion } }),
-    });
-    if (r.status !== 204) throw new Error({
-      401: "Schlüssel ungültig oder abgelaufen – unter ⚙ neu eintragen",
-      403: "Dem Schlüssel fehlt die Berechtigung „Actions: Read and write“",
-      404: "Repository nicht gefunden – ist es beim Schlüssel unter „Repository access“ ausgewählt?",
-    }[r.status] || `GitHub-Fehler ${r.status}`);
-    toast(aktion === "report" ? say("Dr Wochenreport wird gmacht – dauert a Minütle oder zwoi.", "Wochenreport wird erstellt – dauert ca. 1–2 Minuten.")
+    if (!opt.running) {   // läuft schon ein Abruf (auch von einem anderen Gerät), wird nur auf dessen Ergebnis gewartet
+      const r = await fetch(`https://api.github.com/repos/${repo()}/actions/workflows/tankpreise.yml/dispatches`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token()}`, Accept: "application/vnd.github+json" },
+        body: JSON.stringify({ ref: "main", inputs: { aktion } }),
+      });
+      if (r.status !== 204) throw new Error({
+        401: "Schlüssel ungültig oder abgelaufen – unter ⚙ neu eintragen",
+        403: "Dem Schlüssel fehlt die Berechtigung „Actions: Read and write“",
+        404: "Repository nicht gefunden – ist es beim Schlüssel unter „Repository access“ ausgewählt?",
+      }[r.status] || `GitHub-Fehler ${r.status}`);
+    }
+    if (opt.auto) toast(opt.running ? say("Dia Preis werret grad neu abgfrogt – gli send se do.", "Die Daten werden gerade neu abgefragt – gleich sind die Preise aktuell.")
+      : say("Dia Preis werret neu abgfrogt – in 1–2 Minuta send se frisch.", "Die Daten werden neu abgefragt – in 1–2 Minuten sind die Preise aktuell."), 5000);
+    else toast(aktion === "report" ? say("Dr Wochenreport wird gmacht – dauert a Minütle oder zwoi.", "Wochenreport wird erstellt – dauert ca. 1–2 Minuten.")
       : say("Abruf läuft – in 1–2 Minuta gibt's frische Preis.", "Abruf gestartet – neue Preise in ca. 1–2 Minuten."), 0);
     const before = JSON.stringify(bases.map((b) => b.updated));
     for (let i = 0; i < 24; i++) {
@@ -946,10 +951,28 @@ async function dispatch(aktion) {
         if (JSON.stringify(b.map((x) => x.updated)) !== before || aktion === "report" && i > 6) { await load(true); toast(aktion === "report" ? say("Sodele, dr Report isch do ✓", "Aktualisiert ✓") : say("Sodele, frische Preis sind do ✓", "Aktualisiert ✓")); return; }
       } catch {}
     }
-    toast(say("Des dauert länger als denkt – nochher nomol neu lada.", "Dauert länger als erwartet – später neu laden."), 5000);
+    if (!opt.auto) toast(say("Des dauert länger als denkt – nochher nomol neu lada.", "Dauert länger als erwartet – später neu laden."), 5000);
   } catch (e) {
-    toast("Fehler: " + e.message, 6000);
+    if (!opt.auto) toast("Fehler: " + e.message, 6000);   // beim automatischen Abruf kein Fehlerhinweis bei jedem Öffnen (die Statusmeldung oben sagt, was los ist)
   } finally { btn.classList.remove("spin"); }
+}
+
+// ---- Automatischer Abruf: GitHub startet den geplanten Abruf nur unregelmäßig (nachts oft stundenlang gar nicht).
+// Ist der Preisstand beim Öffnen der App älter als AUTO_STALE_MIN, startet die App den Abruf selbst und sagt es kurz an;
+// ein schon laufender Abruf wird nicht doppelt gestartet. Je Gerät höchstens alle AUTO_PAUSE_MIN Minuten.
+const AUTO_STALE_MIN = 75, AUTO_PAUSE_MIN = 10;
+let autoBusy = false;
+async function autoRefresh() {
+  if (autoBusy || !token() || !repo() || !navigator.onLine) return;
+  if (!view || view.error || view.live || view.provisional || view.cachedAt || !view.updated || evMode) return;
+  if (!(minsAgo(view.updated) > AUTO_STALE_MIN)) return;
+  if (Date.now() - Number(store.get("autoAt", "0")) < AUTO_PAUSE_MIN * 60000) return;
+  autoBusy = true; store.set("autoAt", String(Date.now()));
+  try {
+    const r0 = (await lastRun(repo(), "tankpreise.yml", token()).catch(() => null))?.[0];
+    const running = !!r0 && ["queued", "waiting", "pending", "requested", "in_progress"].includes(r0.status) && minsAgo(r0.created_at) < 15;
+    await dispatch("abrufen", { auto: true, running });
+  } finally { autoBusy = false; }
 }
 
 function openSettings() {
