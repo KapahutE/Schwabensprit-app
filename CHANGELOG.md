@@ -2,6 +2,9 @@
 
 Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) steht in den Einstellungen unter „Anzeige-Diagnose“.
 
+## 08.11.2026 – Versuch: weniger dichter Zeitplan
+- Daten-Repository: geplante Läufe jetzt viermal pro Stunde zu unrunden Minuten (7, 22, 37, 52) statt alle 5 Minuten (Sperre für geplante Läufe 10 statt 13 Minuten). Ausgangslage: seit dem 4.11. nur etwa 4 geplante Läufe am Tag (vorher 28). Auswertung nach 24 Stunden (Soll: möglichst viele der 96 Läufe am Tag, mindestens 40); bleibt es bei unter 10, ist der externe Zeitgeber oder eigene Server nötig (`docs/SERVER.md`)
+
 ## 08.11.2026 – Prüfung der Funktionen
 - Geprüft mit den echten veröffentlichten Daten (alle 5 Gebiete): Preise, Ersparnis nach Füllstand, Verlauf, „Wann tanken?“, Details, Orte und Radien, Spritbüchle, Route, E-Modus – keine Fehler, keine „NaN/undefined“-Texte, erste Preiskarte nach 2,3 Sekunden
 - Spritbüchle: Kopfzeile nennt jetzt das Gebiet der Regeladresse statt eines technischen Namens
