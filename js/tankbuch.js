@@ -166,7 +166,7 @@ function renderTankbuch() {
   }).join("");
   el.innerHTML = `
     <h1 class="tbh">📒 ${TB_NAME()}</h1>
-    <p class="small" style="margin:2px 0 14px">Vergleich mit dem günstigsten Preis im Umkreis von <b>${esc(hb?.name || "–")}</b> zur Tankzeit · änderbar unter ⚙</p>
+    <p class="small" style="margin:2px 0 14px">Vergleich mit dem günstigsten Preis im Gebiet deiner Regeladresse (<b>${esc(hb ? placeLabel(hb) : "–")}</b>, Umkreis ${hb ? fmtNum(hb.radius_km, 0) : "–"} km) zur Tankzeit · änderbar unter ⚙</p>
     <div class="row two" style="margin:0 0 6px">
       <button class="btn" id="btnTbScan">📷 ${say("Beleg scanna", "Beleg scannen")}</button>
       <button class="btn secondary" id="btnTbManual">✍️ Ohne Beleg</button>

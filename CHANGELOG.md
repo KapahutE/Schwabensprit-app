@@ -2,6 +2,11 @@
 
 Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) steht in den Einstellungen unter „Anzeige-Diagnose“.
 
+## 08.11.2026 – Prüfung der Funktionen
+- Geprüft mit den echten veröffentlichten Daten (alle 5 Gebiete): Preise, Ersparnis nach Füllstand, Verlauf, „Wann tanken?“, Details, Orte und Radien, Spritbüchle, Route, E-Modus – keine Fehler, keine „NaN/undefined“-Texte, erste Preiskarte nach 2,3 Sekunden
+- Spritbüchle: Kopfzeile nennt jetzt das Gebiet der Regeladresse statt eines technischen Namens
+- Befund Datenabruf: Seit dem 4.11. startet GitHub nur noch etwa 4 geplante Läufe am Tag (vorher 28); der Preisstand wird fast nur noch durch das Öffnen der App aktualisiert. Folgen: im Verlauf der letzten 7 Tage nur 87 statt etwa 670 Messpunkte, die Prognose ist für die Gebiete Base H, Homebase Sailers und Homebase M&J nicht verfügbar (schlechter als „Preis bleibt gleich“), nur für Base F und Homebase G. Abhilfe: externer Zeitgeber oder eigener Server (`docs/SERVER.md`)
+
 ## 04.11.2026 – Neue Versionen kommen von selbst an
 - Dokumentation: `docs/SERVER.md` (Empfehlung für einen eigenen Server zum Preisabruf: Größe, Anbieter, Schutz, Betrieb, Kosten, Messwerte)
 - Die installierte App zeigte beim Öffnen zuerst die alte Version aus dem Speicher und blendete nur den Balken „Neue Version bereit – tippen zum Neuladen“ ein; wer ihn nicht antippte, blieb bei der alten Version (und ohne neue Korrekturen, z. B. den automatischen Abruf). Jetzt lädt sich die App beim Öffnen selbst neu, wenn sie gerade erst geöffnet wurde und noch nichts angetippt ist (kurzer Hinweis, höchstens einmal je 10 Minuten, nicht bei offenem Dialog, Eingabefeld oder laufendem Abruf); sonst bleibt der Balken
