@@ -2,6 +2,9 @@
 
 Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) steht in den Einstellungen unter „Anzeige-Diagnose“.
 
+## 09.11.2026 – Ergebnis des Zeitplan-Versuchs
+- Der Versuch (viermal pro Stunde zu unrunden Minuten) hat **nichts gebracht**: in 24,2 Stunden 5 geplante Läufe (wie in den 24 Stunden davor), mittlerer Abstand 4,8 Stunden, größte Lücke 9,7 Stunden; die Starts lagen nicht auf den eingestellten Minuten. Die Drosselung liegt bei GitHub, nicht an der Taktung. Nächster Schritt: externer Zeitgeber oder eigener Server (`docs/SERVER.md`)
+
 ## 08.11.2026 – Versuch: weniger dichter Zeitplan
 - Daten-Repository: geplante Läufe jetzt viermal pro Stunde zu unrunden Minuten (7, 22, 37, 52) statt alle 5 Minuten (Sperre für geplante Läufe 10 statt 13 Minuten). Ausgangslage: seit dem 4.11. nur etwa 4 geplante Läufe am Tag (vorher 28). Auswertung nach 24 Stunden (Soll: möglichst viele der 96 Läufe am Tag, mindestens 40); bleibt es bei unter 10, ist der externe Zeitgeber oder eigene Server nötig (`docs/SERVER.md`)
 
