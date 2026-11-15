@@ -2,6 +2,12 @@
 
 Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) steht in den Einstellungen unter „Anzeige-Diagnose“.
 
+## 15.11.2026 – Externer Zeitgeber (cron-job.org) löst das Abrufproblem
+- Ein Job bei cron-job.org startet den Abruf alle 15 Minuten (Minuten 3, 18, 33, 48) über die GitHub-Schnittstelle (`POST …/repos/KapahutE/tankpreise/actions/workflows/tankpreise.yml/dispatches`, Schlüssel nur für dieses Repository mit „Actions: Read and write“). Der GitHub-Zeitplan bleibt als Reserve
+- Ergebnis nach 1,5 Tagen (13.11. 11:03 UTC bis 15.11. 02:18 UTC): 166 Läufe, alle erfolgreich, Abstand durchgehend 15 Minuten, keine Lücke über 20 Minuten (vorher bis zu 7 Stunden); am 14.11. 102 Läufe
+- Die Prognose ist wieder für alle fünf Gebiete verfügbar (für Base H, Homebase Sailers und Homebase M&J war sie seit dem 8.11. ausgefallen)
+- Offen: Der Zeitgeber hängt weiter an GitHub (Störungen am 9. und 10.11.); zweite Stufe ist ein eigener Server (`docs/SERVER.md`)
+
 ## 09.11.2026 – Ergebnis des Zeitplan-Versuchs
 - Der Versuch (viermal pro Stunde zu unrunden Minuten) hat **nichts gebracht**: in 24,2 Stunden 5 geplante Läufe (wie in den 24 Stunden davor), mittlerer Abstand 4,8 Stunden, größte Lücke 9,7 Stunden; die Starts lagen nicht auf den eingestellten Minuten. Die Drosselung liegt bei GitHub, nicht an der Taktung. Nächster Schritt: externer Zeitgeber oder eigener Server (`docs/SERVER.md`)
 

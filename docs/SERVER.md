@@ -2,6 +2,10 @@
 
 Stand: 04.11.2026. Anlass: GitHub startet den geplanten Abruf nur noch unregelmäßig (am 4.11. in 13 Stunden 2 geplante Läufe, dazu die Störung vom selben Tag, siehe `CHANGELOG.md`). Dieses Dokument beschreibt, welcher Server genügt, was er können muss und welche Zusatzsoftware für Schutz und Betrieb nötig ist. **Preise und Verfügbarkeit ändern sich 2026 häufig; vor der Bestellung beim Anbieter prüfen.**
 
+## 0. Stand 15.11.2026: externer Zeitgeber eingerichtet
+Als Sofortlösung läuft ein Job bei **cron-job.org** (kostenloses Konto). Er ruft alle 15 Minuten (Minuten 3, 18, 33, 48) per `POST` `https://api.github.com/repos/KapahutE/tankpreise/actions/workflows/tankpreise.yml/dispatches` auf, Body `{"ref":"main","inputs":{"aktion":"abrufen"}}`, Header `Authorization: Bearer <Schlüssel>`, `Accept: application/vnd.github+json`, `Content-Type: application/json`, `X-GitHub-Api-Version: 2022-11-28`; Erfolg ist die Antwort 204, bei Fehlern kommt eine E-Mail. Der Schlüssel ist ein **Fine-grained token** `cronjob-tankpreise` nur für `KapahutE/tankpreise` mit „Actions: Read and write“, gültig 365 Tage (**Ablauf im Kalender notieren und vorher erneuern**: Regenerate token, bei cron-job.org im Header ersetzen). Ergebnis: 166 Läufe in 1,5 Tagen, keine Lücke über 20 Minuten.
+Grenzen: Der Zeitgeber startet nur den GitHub-Lauf; fällt GitHub Actions aus (9. und 10.11.), fällt der Abruf aus. Fehlerbilder: 401 Schlüssel/Header, 404 falsche Adresse oder Repository nicht beim Schlüssel, 422 Body fehlerhaft. Die API-Version `2022-11-28` läuft laut GitHub im März 2028 aus. Der eigene Server unten bleibt die zweite Stufe.
+
 ## 1. Kurzfassung
 
 - **Empfehlung:** ein kleiner virtueller Server (VPS) in Deutschland mit Debian 13 (oder Ubuntu 24.04 LTS), 2 vCPU, 2 bis 4 GB RAM, 20 GB Speicher. Erste Wahl **Hetzner Cloud** (Nürnberg/Falkenstein, Tarif CX23 oder CAX11) oder **netcup VPS 500 G12**. Kosten etwa **5 bis 7 € im Monat** plus etwa 1 bis 4 € für ein getrenntes Backup.
