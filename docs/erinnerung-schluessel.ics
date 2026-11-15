@@ -1,0 +1,31 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Schwabensprit//Erinnerung//DE
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:cronjob-tankpreise-ablauf-20271106@schwabensprit
+DTSTAMP:20261115T120000Z
+DTSTART;VALUE=DATE:20271106
+DTEND;VALUE=DATE:20271107
+SUMMARY:Schwabensprit: GitHub-Schlüssel cronjob-tankpreise läuft bald ab
+DESCRIPTION:Der Schlüssel (Fine-grained token cronjob-tankpreise) läuft am 13.11.2027 ab. Erneuern: GitHub → Settings → Developer settings → Fine-grained tokens → Regenerate token. Neuen Wert bei cron-job.org im Header Authorization (Bearer …) eintragen. Details: docs/SERVER.md Abschnitt 0.
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Schlüssel cronjob-tankpreise erneuern
+TRIGGER:-P0DT0H0M0S
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:cronjob-tankpreise-ablauf-20271110@schwabensprit
+DTSTAMP:20261115T120000Z
+DTSTART;VALUE=DATE:20271110
+DTEND;VALUE=DATE:20271111
+SUMMARY:Schwabensprit: Schlüssel läuft in 3 Tagen ab (letzte Erinnerung)
+DESCRIPTION:Schlüssel cronjob-tankpreise jetzt erneuern, sonst stoppt der Preisabruf am 13.11.2027.
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Schlüssel jetzt erneuern
+TRIGGER:-P0DT0H0M0S
+END:VALARM
+END:VEVENT
+END:VCALENDAR
