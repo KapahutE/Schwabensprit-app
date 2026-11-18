@@ -116,12 +116,12 @@ async function openFav(id) {
 const SPARK = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 3 8-8"/><path d="M15 7h5v5"/></svg>`;
 const eurA = (v) => eur2s(v) + " €";
 const dtLabel = (iso) => new Date(iso).toLocaleString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " Uhr";
-const fcErr = (fc, t) => { const h = Math.min(12, Math.max(1, Math.round((t - Date.now()) / 36e5))); return (fc.quality.mae[h - 1] ?? fc.quality.mae_avg) / 100; };
+const fcErr = (fc, t) => { const h = Math.min(12, Math.max(1, Math.round((t - deNow()) / 36e5))); return (fc.quality.mae[h - 1] ?? fc.quality.mae_avg) / 100; };
 // Prognose einer Tankstelle als [[t, €]], ohne Zeiten, in denen sie laut Öffnungszeiten zu hat
 function fcSeries(fc, s, f, maxH = 24) {
   const arr = fc?.ok && fc.stations?.[s.id]?.[f];
   if (!arr) return [];
-  const now = Date.now(), out = [], ts = fcTimes(fc, arr.length);
+  const now = deNow(), out = [], ts = fcTimes(fc, arr.length);
   arr.forEach((v, i) => {
     const t = ts[i];
     if (v == null || t < now - 18e5 || t > now + maxH * 36e5) return;
@@ -140,7 +140,7 @@ function fcTimes(fc, n) {
 function fcPlan() {
   const fc = view?.base && baseCache[view.base.id]?.forecast;
   if (!fc?.ok) return { fc };
-  const now = Date.now();
+  const now = deNow();
   const open = view.stations.filter((s) => hasPrice(s));
   const cur = open.length ? Math.min(...open.map((s) => s[fuel])) : null;
   const best = new Map();   // Stunde -> günstigste prognostizierte Tankstelle
@@ -158,7 +158,7 @@ function fcPlan() {
 }
 // Prognose-Diagramm (aufklappbar in „Wann tanka?“)
 function fcChart(P) {
-  const { fc, cur, pts, bt, bo } = P, now = Date.now();
+  const { fc, cur, pts, bt, bo } = P, now = deNow();
   const line = [...(cur != null ? [[now, cur]] : []), ...pts.map(([t, o]) => [t, o.v])];
   const band = pts.map(([t, o]) => [t, o.v - fcErr(fc, t), o.v + fcErr(fc, t)]);
   return `${lineChart([{ name: "Günstigster Preis (Prognose)", cls: "proj", pts: line, band }], { mark: [bt, bo.v], markLabel: `≈ ${eurA(bo.v)}` })}
@@ -300,7 +300,7 @@ function noonInfo(chg, ids, f) {
 // Preise (und alles, was darauf aufbaut) können schon überholt sein
 function noonStale() {
   if (!noonCtx || !view?.updated || view.live) return false;
-  const now = new Date(), noon = new Date(now), u = new Date(view.updated);
+  const now = new Date(deNow()), noon = new Date(now), u = new Date(wallOf(view.updated));
   noon.setHours(12, 0, 0, 0);
   return now >= noon && now < noon.getTime() + 90 * 60000 && u < noon.getTime() + 25 * 60000 && u > noon.getTime() - 3 * 36e5;
 }
@@ -316,7 +316,7 @@ const NOON_LAW = "Gesetzlich (§ 2 Kraftstoffpreisanpassungsgesetz, seit 1.4.202
 // Die Überschrift sagt, was zu tun ist; darunter die Fakten (Tageszeit-Streifen, Prognose zum Aufklappen).
 let anaSum = null, moreOpen = false, whenHour = -1;
 function whenHead(sum, P) {
-  const N = noonCtx, stale = noonStale(), now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
+  const N = noonCtx, stale = noonStale(), now = new Date(deNow()), mins = now.getHours() * 60 + now.getMinutes();
   const noon12 = new Date(now); noon12.setHours(12, 0, 0, 0);
   const at = (t) => hm(new Date(t)), where = (o) => `${esc(o.s.brand)}, ${esc(o.s.place)}`;
   const best = P.ok ? say(`geg ${at(P.bt)} Uhr: ≈ ${eurA(P.bo.v)} bei ${where(P.bo)}`, `gegen ${at(P.bt)} Uhr: ≈ ${eurA(P.bo.v)} bei ${where(P.bo)}`) : "";
@@ -410,7 +410,7 @@ function tankrat(P) {
   let txt = "";
   if (x) {
     const range = Math.round(RANGE()), fill = NEED(), L = fmtNum(fill, 0);
-    const noonUp = noonCtx && new Date().getHours() < 12 && !noonStale() ? noonCtx.info.avgUp : 0;
+    const noonUp = noonCtx && new Date(deNow()).getHours() < 12 && !noonStale() ? noonCtx.info.avgUp : 0;
     if (range < 100) txt = say(`⚠ Reichweite bloß ≈ ${range} km – etz tanka, net uff en günstigera Preis warta.`, `⚠ Reichweite nur ≈ ${range} km – jetzt tanken, nicht auf einen günstigeren Preis warten.`);
     else if (P?.ok && P.wait) txt = say(`Reichweite ≈ ${range} km – du kasch warta: geg ${hm(new Date(P.bt))} Uhr ≈ ${eur2(P.gain * fill)} billiger (${L} l).`, `Reichweite ≈ ${range} km – du kannst warten: gegen ${hm(new Date(P.bt))} Uhr ≈ ${eur2(P.gain * fill)} günstiger (${L} l).`);
     else if (noonUp > 0.002) txt = say(`Reichweite ≈ ${range} km – vor 12 Uhr tanka spart ≈ ${eur2(noonUp * fill)} (${L} l).`, `Reichweite ≈ ${range} km – vor 12 Uhr tanken spart ≈ ${eur2(noonUp * fill)} (${L} l).`);
@@ -428,12 +428,12 @@ function renderWhen(headOnly = false) {
   if (w) w.innerHTML = noonStale() ? `<div class="card notice warnbox"><span class="ic">⏳</span><div><b>Erhöhung läuft gerade</b><br>
     Die Preise sind vom Abruf um ${hm(new Date(view.updated))} Uhr – seit 12 Uhr erhöhen die Tankstellen. Angezeigte Preise können schon überholt sein, der nächste Abruf kommt in wenigen Minuten.</div></div>` : "";
   // Minutentakt: nur Überschrift neu; zur vollen Stunde alles (Markierung „jetzt“ im Streifen)
-  if (headOnly && head && whenHour === new Date().getHours() && $("#whenHead")) {
+  if (headOnly && head && whenHour === new Date(deNow()).getHours() && $("#whenHead")) {
     $("#whenHead").innerHTML = head.html;
     el.firstElementChild?.classList.toggle("soon", head.soon);
     return;
   }
-  whenHour = new Date().getHours();
+  whenHour = new Date(deNow()).getHours();
   const tipRow = sum && sum.days > 1 ? `<div class="wfact"><div>${say(`Am billigschde meischtens <b>${sum.bestHour}–${sum.bestHour + 1} Uhr</b> (${ct(sum.hourAvg[sum.bestHour])}), am deirschde ${sum.worstHour}–${sum.worstHour + 1} Uhr.`,
       `Meist am günstigsten <b>${sum.bestHour}–${sum.bestHour + 1} Uhr</b> (${ct(sum.hourAvg[sum.bestHour])}), am teuersten ${sum.worstHour}–${sum.worstHour + 1} Uhr.`)}${sum.bestWd != null ? say(` Billigschder Dag: ${WD_SCHW[sum.bestWd]}.`, ` Günstigster Wochentag: ${WD_LONG[sum.bestWd]}.`) : ""}</div>
       ${stripChart(sum.hourAvg)}
@@ -536,7 +536,7 @@ async function renderDetail() {
     const nChg = stationEvents(baseCache[view.base.id]?.changes, s.id, fuel).length;
     const fcData = baseCache[view.base.id]?.forecast, fcPts = fcSeries(fcData, s, fuel);
     const fcBand = fcPts.map(([t, v]) => [t, v - fcErr(fcData, t), v + fcErr(fcData, t)]);
-    const fc12 = fcPts.filter(([t]) => t > Date.now() && t <= Date.now() + 12 * 36e5);
+    const fc12 = fcPts.filter(([t]) => t > deNow() && t <= deNow() + 12 * 36e5);
     const fcBest = fc12.length ? fc12.reduce((a, b) => b[1] < a[1] ? b : a) : null;
     h += `<div class="sec"><h2>${FUELS[fuel]}</h2><span class="sub">${span >= 6 ? say("die letschde 7 Täg", "letzte 7 Tage") : say("bis etz gsammelt", "bisher gesammelt")}</span></div>
       <div class="stats">
@@ -579,7 +579,7 @@ function hoursCard(s) {
   else if (H.wholeDay) body = `<div><b>Durchgehend geöffnet</b> – 24 Stunden, 7 Tage.</div>`;
   else if (!H.slots?.length) body = `<div class="sub">Keine Öffnungszeiten hinterlegt.</div>`;
   else {
-    const wd = (new Date().getDay() + 6) % 7;
+    const wd = (new Date(deNow()).getDay() + 6) % 7;
     body = `<table class="hours">` + H.slots.map((x) => {
       const range = x.start === x.end ? "24 h" : `${x.start}–${x.end === "00:00" ? "24:00" : x.end} Uhr`;
       return `<tr class="${x.days?.includes(wd) ? "today" : ""}"><td>${esc(x.text)}</td><td>${esc(range)}</td></tr>`;

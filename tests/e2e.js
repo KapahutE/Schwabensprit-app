@@ -1,5 +1,6 @@
 // Browser-Tests (Playwright, Chromium, Handy-Größe) mit festen Testdaten und nachgestellten Diensten: node tests/e2e.js
 // Env: DEVICE = Gerät aus Playwright (Standard "iPhone 13"; "Pixel 7" für Android)
+//      TZID = Zeitzone des Geräts (Standard "Europe/Berlin"; "Asia/Bangkok" prüft die Reise-Fälle)
 //      LEAFLET_DIR = lokale Kopie von leaflet@1.9.4/dist (sonst wird unpkg wirklich abgerufen)
 "use strict";
 const { check, done, fixture, playwright, serve } = require("./lib.js");
@@ -10,7 +11,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
   const { chromium, devices } = playwright(), srv = await serve(), browser = await chromium.launch();
   const DEVICE = process.env.DEVICE || "iPhone 13", ANDROID = /Android/.test(devices[DEVICE].userAgent);
-  const ctx = await browser.newContext({ ...devices[DEVICE], timezoneId: "Europe/Berlin", locale: "de-DE", serviceWorkers: "allow" });
+  const ctx = await browser.newContext({ ...devices[DEVICE], timezoneId: process.env.TZID || "Europe/Berlin", locale: "de-DE", serviceWorkers: "allow" });
   const bases = fixture("bases.json"), latest = fixture("latest-H.json"), EVL = fixture("ev-locations.json"), EVT = fixture("ev-tariffs.json"), OSRM = JSON.stringify(fixture("route-stgt-ulm.json"));
   const state = { offline: false, loc: 0, csp: [], updMin: 5, delay: 0, fail: false, disp: 0, bumpOnDispatch: false, bump: false, runs: [] };
   const stamp = (min) => new Date(Date.now() - min * 60000).toLocaleString("sv-SE", { timeZone: "Europe/Berlin" }).replace(" ", "T");   // wie „updated“ in den Daten (Berliner Zeit)

@@ -357,8 +357,8 @@ const Route = (() => {
   }
   // Geöffnet? Frische Daten (< 30 Min.) haben Vorrang, sonst zählt der Öffnungsplan (wie state())
   const isOpen = (s) => {
-    const sch = schedule(s), fresh = s._upd && Date.now() - new Date(s._upd) < 30 * 60000;
-    const flip = sch && fresh && schedule(s, new Date(s._upd))?.open !== sch.open;   // seit dem Abruf laut Plan auf-/zugemacht
+    const sch = schedule(s), fresh = s._upd && deNow() - wallOf(s._upd) < 30 * 60000;
+    const flip = sch && fresh && schedule(s, new Date(wallOf(s._upd)))?.open !== sch.open;   // seit dem Abruf laut Plan auf-/zugemacht
     return !sch || (fresh && !flip) ? !!s.open : sch.open;
   };
   const SOON = 20 * 60000;   // Ankunft innerhalb 20 Min.: es gilt der aktuelle Preis
@@ -368,7 +368,7 @@ const Route = (() => {
     if (s[f] == null || t - Date.now() < SOON) return { v: s[f], fc: false };
     const fc = fcFor(s.id), arr = fc?.stations[s.id]?.[f];
     if (!arr) return { v: s[f], fc: false };
-    const i = Math.round(wallMin(fc.start, t) / (fc.step_min || 60));   // Stunden ab „start“ in Ortszeit
+    const i = Math.round(wallMin(fc.start, deWallMs(t)) / (fc.step_min || 60));   // Stunden ab „start“ in Ortszeit
     return arr[i] != null ? { v: arr[i] / 1000, fc: true } : { v: s[f], fc: false };
   }
   // Ankunft, Umweg (echt oder geschätzt), Preis und Öffnung bei Ankunft, Tankfüllung inkl. Umweg
@@ -381,7 +381,7 @@ const Route = (() => {
       s.eta = dep + s.toSec * 1000;
       s.p = {}; s.pfc = {};
       for (const f of Object.keys(FUELS)) { const x = priceAt(s, f, s.eta); s.p[f] = x.v; s.pfc[f] = x.fc; }
-      const sch = schedule(s, new Date(s.eta));
+      const sch = schedule(s, new Date(deWallMs(s.eta)));
       s.o = s.eta - Date.now() < SOON ? isOpen(s) : sch ? sch.open : !!s.open;
       s.fillCost = s.p[fuel] != null ? s.p[fuel] * (NEED() + s.detourKm * CONS() / 100) : null;
       s.far = !inReach(s.alongKm + s.offKm * ROAD, RANGE());   // Füllstand: erste Tankstelle muss in Reichweite liegen
@@ -578,9 +578,9 @@ const Route = (() => {
         ? say("Ghupft wie gsprunga – dr Unterschied isch unter oim halba Cent.", "Egal – der Unterschied liegt unter einem halben Cent.")
         : `${before ? say("<b>Vor dr Grenz</b> tanka", "<b>Vor der Grenze</b> tanken") : say("<b>Nach dr Grenz</b> tanka", "<b>Nach der Grenze</b> tanken")}: ${Math.abs(diff * 100).toFixed(1).replace(".", ",")} ct/l ${say("billiger", "günstiger")} – ${say("macht", "das sind")} <b>${eur2(Math.abs(diff) * NEED())}</b> bei ${needTxt()}.`;
       // beide Länder: Preiserhöhungen nur um 12 Uhr – bei Ankunft nach dem nächsten Mittag kann's teurer sein
-      const noon = new Date(); noon.setHours(12, 0, 0, 0);
-      if (noon.getTime() <= Date.now()) noon.setDate(noon.getDate() + 1);
-      const late = !A.pfc[fuel] && A.eta >= noon.getTime() ? `<p class="sub">🕛 ${say("In Öschtrreich derfet d'Preis bloß om 12 nauf – kommsch erscht danach a, ka's bis dahin no deirer werra.", "In Österreich dürfen Preise nur um 12 Uhr steigen – bei Ankunft danach kann es bis dahin teurer werden.")}</p>` : "";
+      const noon = new Date(deNow()); noon.setHours(12, 0, 0, 0);
+      if (noon.getTime() <= deNow()) noon.setDate(noon.getDate() + 1);
+      const late = !A.pfc[fuel] && deWallMs(A.eta) >= noon.getTime() ? `<p class="sub">🕛 ${say("In Öschtrreich derfet d'Preis bloß om 12 nauf – kommsch erscht danach a, ka's bis dahin no deirer werra.", "In Österreich dürfen Preise nur um 12 Uhr steigen – bei Ankunft danach kann es bis dahin teurer werden.")}</p>` : "";
       return `<section class="card rtborder"><span class="eyebrow">${say("Vor oder nach dr Grenz tanka?", "Vor oder nach der Grenze tanken?")}</span>
         <div class="rtbx">${side(pre[0], pre[1], say("vor dr Grenz", "vor der Grenze"))}${side(post[0], post[1], say("nach dr Grenz", "nach der Grenze"))}</div>
         <p class="verdict">${v}</p>${late}</section>`;
@@ -605,7 +605,7 @@ const Route = (() => {
       </button>${open ? detailHtml(s) : ""}</div>`;
   }
   function detailHtml(s) {
-    const sch = schedule(s, new Date(s.eta)), o = s.o, later = s.eta - Date.now() >= SOON;
+    const sch = schedule(s, new Date(deWallMs(s.eta))), o = s.o, later = s.eta - Date.now() >= SOON;
     const fl = s.country === "AT" ? { e5: "Super 95", diesel: "Diesel" } : FUELS, cur = s.country === "AT" && fuel === "e10" ? "e5" : fuel;
     return `<div class="rtdet">
       <div class="fuelgrid${s.country === "AT" ? " two" : ""}">${Object.keys(fl).map((f) => `<div class="ftile${f === cur ? " on" : ""}"><div class="n">${fl[f]}</div><b>${has(s, f) ? (s.pfc[f] ? "≈" : "") + price(pf(s, f)) : "–"}</b>${s.pfc[f] && s[f] != null ? `<div class="r">jetzt ${eurX(s[f])}</div>` : ""}</div>`).join("")}</div>

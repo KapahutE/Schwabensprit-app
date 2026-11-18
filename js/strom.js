@@ -256,7 +256,7 @@ const Strom = (() => {
     const h = s.hours;
     if (!h || h.twentyfourseven) return h?.twentyfourseven ? true : null;
     if (!h.regular_hours?.length) return null;
-    const d = new Date(), wd = ((d.getDay() + 6) % 7) + 1, t = d.getHours() * 60 + d.getMinutes();
+    const d = new Date(deNow()), wd = ((d.getDay() + 6) % 7) + 1, t = d.getHours() * 60 + d.getMinutes();
     const mm = (x) => { const [a, b] = String(x).split(":").map(Number); return a * 60 + (b || 0); };
     return h.regular_hours.some((r) => +r.weekday === wd && t >= mm(r.period_begin) && (t < mm(r.period_end) || r.period_end === "24:00" || r.period_end === "00:00"));
   }

@@ -63,12 +63,24 @@ const ct = (v) => (v > 0.0005 ? "+" : v < -0.0005 ? "−" : "±") + Math.abs(v *
 const km = (d) => d == null ? "" : d.toFixed(1).replace(".", ",") + " km";
 const mean = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 const fmtTime = (d) => d.toLocaleString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+// Zeitzone: Alle Daten (Preise, Prognose, Öffnungszeiten) gelten in deutscher Zeit und sind „Wanduhr“-Zeiten ohne Zone.
+// Auf einem Gerät in anderer Zeitzone (Reise) würde Date.now() dazu nicht passen: deNow() liefert die aktuelle deutsche
+// Wanduhrzeit, als wäre sie die Ortszeit des Geräts (in Deutschland identisch mit Date.now()).
+const DE_FMT = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Berlin", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const deWallMs = (ms = Date.now()) => {
+  const p = {}; for (const x of DE_FMT.formatToParts(ms)) p[x.type] = +x.value;
+  return new Date(p.year, p.month - 1, p.day, p.hour, p.minute, p.second).getTime() + (((ms % 1000) + 1000) % 1000);
+};
+const deNow = () => deWallMs();
+// Zeitstempel -> Wanduhrzeit (ohne Zone: wie gespeichert; mit Z/Offset: Zeitpunkt nach deutscher Zeit)
+const wallOf = (iso) => /(Z|[+-]\d\d:?\d\d)$/.test(String(iso)) ? deWallMs(Date.parse(iso)) : new Date(iso).getTime();
+const tzDiffMin = () => Math.round((deNow() - Date.now()) / 60000);   // ≠ 0: Gerät steht nicht in deutscher Zeit
 const ago = (iso) => {
-  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  const m = Math.round((deNow() - wallOf(iso)) / 60000);
   if (m < 1) return "gerade eben";
   if (m < 60) return `vor ${m} Min.`;
   const h = Math.round(m / 60);
-  return h < 24 ? `vor ${h} Std.` : fmtTime(new Date(iso));
+  return h < 24 ? `vor ${h} Std.` : fmtTime(new Date(wallOf(iso)));
 };
 const toast = (msg, ms = 3500) => {
   const t = $("#toast"); t.textContent = msg; t.classList.add("show");
@@ -361,7 +373,7 @@ const byId = (id) => view?.stations?.find((s) => s.id === id);
 // ---- Öffnungszeiten
 const toMin = (hm) => { const [h, m] = String(hm).split(":").map(Number); return h * 60 + (m || 0); };
 const fmtHM = (m) => m >= 1440 ? "24:00" : `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-function schedule(s, now = new Date()) {
+function schedule(s, now = new Date(deNow())) {
   const H = s.hours;
   if (!H) return null;
   if (H.wholeDay) return { open: true, text: "24 h geöffnet", short: "24 h" };
@@ -390,9 +402,9 @@ function schedule(s, now = new Date()) {
 // Frische Daten (< 30 Min.) haben Vorrang (kennen Feiertage), sonst zählt der Plan.
 function state(s) {
   const sch = schedule(s);
-  const fresh = view?.updated && Date.now() - new Date(view.updated) < 30 * 60000;
+  const fresh = view?.updated && deNow() - wallOf(view.updated) < 30 * 60000;
   // frisch, aber laut Plan seit dem Abruf auf- oder zugemacht (z. B. Abruf 21:52, Schluss 22:00): dann gilt der Plan
-  const flip = sch && fresh && schedule(s, new Date(view.updated))?.open !== sch.open;
+  const flip = sch && fresh && schedule(s, new Date(wallOf(view.updated)))?.open !== sch.open;
   const open = !sch || (fresh && !flip) ? s.open : sch.open;
   return { open, text: sch && sch.open === open ? sch.text : "", short: sch && sch.open === open ? sch.short : "" };
 }
@@ -522,9 +534,9 @@ function render() {
   const st = $("#stand");
   if (evMode && tab !== "tankbuch" && tab !== "route") st.innerHTML = "";   // Stand der Ladedaten setzt js/strom.js
   else if (view?.updated) {
-    const age = (Date.now() - new Date(view.updated)) / 60000;
+    const age = (deNow() - wallOf(view.updated)) / 60000;
     st.className = "stand" + (age < 20 ? " fresh" : age > 35 ? " old" : "");
-    st.innerHTML = `<i></i>${view.live ? "Live · " : ""}${view.cachedAt ? "Gespeichert · " : ""}Stand ${esc(ago(view.updated))}`;
+    st.innerHTML = `<i></i>${view.live ? "Live · " : ""}${view.cachedAt ? "Gespeichert · " : ""}Stand ${esc(ago(view.updated))}${tzDiffMin() ? ` · deutsche Zeit` : ""}`;
   } else st.innerHTML = "";
   const main = $("#main");
   main.classList.remove("busy");
@@ -608,7 +620,7 @@ function lineChart(series, opts = {}) {
     g += `<path class="band" d="${path(x.band.map(([t, , b]) => [t, b]))}L${x.band.slice().reverse().map(([t, a]) => `${X(t).toFixed(1)},${Y(a).toFixed(1)}`).join("L")}Z"/>`;
   if (series.length === 1 && !series[0].cls) g += `<path class="area" d="${path(main)}L${X(main[main.length - 1][0]).toFixed(1)},${H - B}L${X(main[0][0]).toFixed(1)},${H - B}Z"/>`;
   if (series.some((x) => x.cls === "proj")) {
-    const xn = X(Date.now());
+    const xn = X(deNow());
     if (xn > L && xn < W - R) g += `<line class="ax" x1="${xn.toFixed(1)}" x2="${xn.toFixed(1)}" y1="${T}" y2="${H - B}"/><text x="${(xn + 3).toFixed(1)}" y="${T - 4}">jetzt</text>`;
   }
   for (const x of [...series].reverse()) if (x.pts.length > 1) g += `<path class="ln ${x.cls || ""}" d="${path(x.pts)}"/>`;
@@ -648,7 +660,7 @@ function devBars(hourAvg, bestHour) {
   const W = 340, H = 170, L = 4, R = 4, T = 18, B = 18, PB = H - B - 14;
   const vals = Array.from({ length: 24 }, (_, i) => hourAvg[i] ?? null);
   const m = Math.max(0.001, ...vals.filter((v) => v != null).map(Math.abs));
-  const zero = T + (PB - T) / 2, sc = (PB - T) / 2 / m, slot = (W - L - R) / 24, bw = Math.min(24, slot * 0.64), now = new Date().getHours();
+  const zero = T + (PB - T) / 2, sc = (PB - T) / 2 / m, slot = (W - L - R) / 24, bw = Math.min(24, slot * 0.64), now = new Date(deNow()).getHours();
   let g = "";
   const xs = [];
   vals.forEach((v, i) => {
@@ -674,7 +686,7 @@ function devBars(hourAvg, bestHour) {
 
 // 24 Felder als Kurzfassung im Tipp: je kräftiger, desto größer die Abweichung
 function stripChart(hourAvg) {
-  const W = 340, H = 46, cw = W / 24, now = new Date().getHours();
+  const W = 340, H = 46, cw = W / 24, now = new Date(deNow()).getHours();
   const vals = Array.from({ length: 24 }, (_, i) => hourAvg[i] ?? null);
   const m = Math.max(0.001, ...vals.filter((v) => v != null).map(Math.abs));
   let g = "";
@@ -861,7 +873,7 @@ async function geoSearch(q, cc = GEO_DE) {
 
 // ---- Statusmeldung: veraltete Daten oder hängende/fehlgeschlagene Läufe bei GitHub
 let healthHtml = "", healthAt = 0, healthKey = "";
-const minsAgo = (iso) => Math.round((Date.now() - new Date(iso)) / 60000);
+const minsAgo = (iso) => Math.round((deNow() - wallOf(iso)) / 60000);
 async function lastRun(repoName, workflow, auth) {
   const r = await fetch(`https://api.github.com/repos/${repoName}/actions/workflows/${workflow}/runs?per_page=3`, {
     headers: { Accept: "application/vnd.github+json", ...(auth ? { Authorization: `Bearer ${auth}` } : {}) }, cache: "no-store",
@@ -876,9 +888,9 @@ function describe(runs, what) {
     return `${what} hängt seit ${age} Min. bei GitHub in der Warteschlange.`;
   if (run.status === "in_progress" && age >= 20) return `${what} läuft seit ${age} Min. ungewöhnlich lange.`;
   if (run.status === "completed" && ["failure", "timed_out", "startup_failure"].includes(run.conclusion))
-    return `${what} ist um ${hm(new Date(run.updated_at))} Uhr fehlgeschlagen.`;
+    return `${what} ist um ${hm(new Date(wallOf(run.updated_at)))} Uhr fehlgeschlagen.`;
   if (run.status === "completed" && run.conclusion === "cancelled" && runs[1]?.conclusion !== "success")
-    return `${what} wurde bei GitHub abgebrochen (${hm(new Date(run.updated_at))} Uhr).`;
+    return `${what} wurde bei GitHub abgebrochen (${hm(new Date(wallOf(run.updated_at)))} Uhr).`;
   return null;
 }
 async function checkHealth(force) {

@@ -233,4 +233,27 @@ const fs = require("fs"), path = require("path"), vm = require("vm"), { spawnSyn
     check("Tankbuch: Neuberechnung läuft einmal, sobald die Gebiete da sind", calls === 1, calls);
     RT("homeChanged('S')"); RT("flushTbRecompute()"); check("Tankbuch: gleiche Region → keine Neuberechnung", calls === 1, calls); }
 }
+// ---- Zeitzone: Daten gelten in deutscher Zeit, auch wenn das Gerät woanders steht (z. B. Bangkok)
+{
+  const src = fs.readFileSync(path.join(ROOT, "js/grund.js"), "utf8"), a = src.indexOf("const DE_FMT"), b = src.indexOf("const ago = ");
+  const oldTZ = process.env.TZ;
+  const run = (tz, utc) => {
+    process.env.TZ = tz;
+    const now = Date.parse(utc);
+    class FD extends Date { constructor(...x) { x.length ? super(...x) : super(now); } static now() { return now; } }
+    const c = vm.createContext({ Date: FD, Intl, Math, String });
+    vm.runInContext(src.slice(a, b) + "\n;this.deNow = deNow; this.wallOf = wallOf; this.tzDiffMin = tzDiffMin; this.deWallMs = deWallMs;", c);
+    return c;
+  };
+  for (const [tz, diff] of [["Europe/Berlin", 0], ["Asia/Bangkok", -360]]) {
+    const c = run(tz, "2026-11-18T07:26:00Z"), n = new Date(c.deNow());
+    check(`Zeitzone ${tz}: deutsche Wanduhr 08:26 (Winter)`, n.getHours() === 8 && n.getMinutes() === 26, [n.getHours(), n.getMinutes()]);
+    check(`Zeitzone ${tz}: Datenstempel „08:26“ ist 0 Min. alt`, Math.round((c.deNow() - c.wallOf("2026-11-18T08:26:00")) / 60000) === 0);
+    check(`Zeitzone ${tz}: Zeitstempel mit Z (07:26Z) zählt als 08:26 deutsche Zeit`, c.wallOf("2026-11-18T07:26:00Z") === c.wallOf("2026-11-18T08:26:00"));
+    check(`Zeitzone ${tz}: Abweichung zur Gerätezeit`, c.tzDiffMin() === diff, c.tzDiffMin());
+  }
+  { const c = run("Asia/Bangkok", "2026-07-18T05:26:00Z"), n = new Date(c.deNow()); check("Zeitzone Bangkok: deutsche Sommerzeit 07:26 → 07:26 Wanduhr", n.getHours() === 7 && n.getMinutes() === 26, [n.getHours(), n.getMinutes()]); }
+  if (oldTZ === undefined) delete process.env.TZ; else process.env.TZ = oldTZ;
+}
+
 done("Unit-Tests");

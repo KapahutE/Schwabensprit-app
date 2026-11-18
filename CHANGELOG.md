@@ -2,6 +2,15 @@
 
 Neueste zuerst. Die Versionsnummer der App (`?v=…`, siehe `tools/version.js`) steht in den Einstellungen unter „Anzeige-Diagnose“.
 
+## 18.11.2026 – Zeitzone: App auch auf Reisen richtig (z. B. Bangkok)
+- **Beobachtung:** Auf einem Gerät außerhalb Deutschlands zeigte die App falsche Hinweise („Preise sind … alt“) und startete bei jedem Öffnen einen neuen Abruf.
+- **Ursache:** Die Daten (Preise, Prognose, Öffnungszeiten) tragen deutsche Wanduhrzeit ohne Zeitzone. Die App verglich sie mit der Uhr des Geräts (in Bangkok 6 Stunden voraus) und hielt frische Daten für alt. Auch Tageszeit-Auswertungen, die Öffnungsprüfung und die Prognose-Linie „jetzt“ rechneten mit der Gerätezeit.
+- **Änderung:** Neue Hilfen `deNow()`, `deWallMs()` und `wallOf()` in `js/grund.js`: Die App rechnet mit der aktuellen deutschen Uhrzeit. In Deutschland ändert sich nichts. Zeitstempel mit Z (z. B. von GitHub) werden in deutsche Zeit umgerechnet. Steht das Gerät in einer anderen Zeitzone, zeigt die Statuszeile „· deutsche Zeit“.
+- **Geändert:** `js/grund.js`, `js/preise.js`, `js/route.js`, `js/strom.js`.
+- **Nicht geändert:** Eigene Eingaben (Tankbuch, Abfahrtszeit der Route) gelten weiter in der Zeit des Geräts.
+- **Tests:** 9 neue Unit-Prüfungen (110 insgesamt, Berlin und Bangkok, Winter und Sommer). Die Browser-Tests laufen mit `TZID=Asia/Bangkok`: ohne die Änderung schlagen 7 Prüfungen fehl, mit ihr bestehen alle (105 iPhone, 106 Android).
+- **Außerdem:** Der Tests-Workflow läuft auf `ubuntu-24.04`, weil Playwright `ubuntu-latest` (jetzt 26.04) nicht unterstützt.
+
 ## 15.11.2026 – Externer Zeitgeber (cron-job.org) löst das Abrufproblem
 - Ein Job bei cron-job.org startet den Abruf alle 15 Minuten (Minuten 3, 18, 33, 48) über die GitHub-Schnittstelle (`POST …/repos/KapahutE/tankpreise/actions/workflows/tankpreise.yml/dispatches`, Schlüssel nur für dieses Repository mit „Actions: Read and write“). Der GitHub-Zeitplan bleibt als Reserve
 - Ergebnis nach 1,5 Tagen (13.11. 11:03 UTC bis 15.11. 02:18 UTC): 166 Läufe, alle erfolgreich, Abstand durchgehend 15 Minuten, keine Lücke über 20 Minuten (vorher bis zu 7 Stunden); am 14.11. 102 Läufe
