@@ -10,9 +10,9 @@
     "test": "npm run lint && npm run unit && npm run e2e && npm run e2e:android"
   },
   "devDependencies": {
-    "axe-core": "^4.10.0",
-    "eslint": "^9.39.0",
-    "globals": "^16.0.0",
-    "playwright": "1.56.1"
+    "axe-core": "^4.14.1",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0",
+    "playwright": "1.65.1"
   }
 }
